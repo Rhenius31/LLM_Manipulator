@@ -1,0 +1,20 @@
+# ===== ROS 2 / colcon =====
+**/build/
+**/install/
+**/log/
+**/.colcon/
+
+# ===== Python =====
+**/__pycache__/
+**/*.pyc
+
+# ===== Gazebo / sim caches =====
+**/.gazebo/
+**/*.db3
+**/rosbag*/
+**/*.bag
+
+# ===== IDE / OS =====
+.vscode/
+.idea/
+.DS_Store
