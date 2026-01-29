@@ -17,6 +17,11 @@ setup(
         #  INSTALL LAUNCH FILES
         (os.path.join('share', package_name, 'launch'),
             glob('launch/*.launch.py')),
+        ("share/my_robot_task_api/launch", glob("launch/*.py")),
+        ("share/my_robot_task_api/worlds", glob("worlds/*.sdf")),
+        ("share/my_robot_task_api/urdf",   glob("urdf/*.urdf")),
+        ("share/my_robot_task_api/config", glob("config/*.yaml")),
+
     ],
     install_requires=['setuptools'],
     zip_safe=True,
