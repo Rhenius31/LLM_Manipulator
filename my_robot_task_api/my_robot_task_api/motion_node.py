@@ -101,8 +101,29 @@ class MotionBase(Node):
         ps.pose.position.x = float(x)
         ps.pose.position.y = float(y)
         ps.pose.position.z = float(z)
-        ps.pose.orientation = ORIENTATIONS.get(preset, ORIENTATIONS["carry"])
+        ps.pose.orientation.w = 1.0   # neutral quaternion
+
+        #ps.pose.orientation = ORIENTATIONS.get(preset, ORIENTATIONS["carry"])
         return ps
+    def move_xyz_unconstrained_sync(self, x, y, z, duration_sec=3.0) -> bool:
+        """
+        Move to XYZ with orientation unconstrained (identity quaternion).
+        This avoids IK failing due to strict orientation constraints.
+        """
+        self.get_logger().info(f"[POSE->IK FREE] x={x:.3f} y={y:.3f} z={z:.3f}")
+
+        pose = PoseStamped()
+        pose.header.frame_id = self.planning_frame  # keep consistent
+        pose.pose.position.x = float(x)
+        pose.pose.position.y = float(y)
+        pose.pose.position.z = float(z)
+        pose.pose.orientation.w = 1.0  # unconstrained orientation
+
+        joints = self.compute_ik_sync(pose)
+        if joints is None:
+            return False
+
+        return self.execute_joints_controller_sync(joints, duration_sec=duration_sec)
 
     # -------------------------
     # IK (compute_ik) -> joint list
@@ -112,7 +133,7 @@ class MotionBase(Node):
         req.ik_request.group_name = self.group_name
         req.ik_request.ik_link_name = self.eef_link
         req.ik_request.pose_stamped = pose_stamped
-        req.ik_request.avoid_collisions = True
+        req.ik_request.avoid_collisions = False
 
 
         # Jazzy: PositionIKRequest may not have "attempts", so we only set timeout

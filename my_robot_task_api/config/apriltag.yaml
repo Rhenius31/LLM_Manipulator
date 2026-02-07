@@ -1,0 +1,10 @@
+apriltag:
+  ros__parameters:
+    family: 36h11
+    size: 0.05
+    max_hamming: 0
+    detector:
+      decimate: 1.0
+      refine: true
+    publish_tf: true
+    use_sim_time: true

@@ -1,0 +1,19 @@
+/apriltag:
+  ros__parameters:
+    # IMPORTANT: use a detector plugin that exists
+    detector:
+      # many builds use "type"; others use "name". We'll set both safely.
+      type: mit
+      name: mit
+
+      decimate: 2.0
+      refine: true
+      threads: 1
+      blur: 0.0
+      sharpening: 0.25
+
+    family: 36h11
+    size: 0.05
+    max_hamming: 0
+    pose_estimation_method: pnp
+    image_transport: raw

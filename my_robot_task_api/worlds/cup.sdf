@@ -1,0 +1,23 @@
+<sdf version="1.9">
+  <model name="cup">
+    <static>false</static>
+    <pose>0.25 0.0 0.75 0 0 0</pose>
+    <link name="link">
+      <inertial><mass>0.2</mass></inertial>
+      <collision name="col">
+        <geometry>
+          <cylinder><radius>0.035</radius><length>0.10</length></cylinder>
+        </geometry>
+      </collision>
+      <visual name="vis">
+        <geometry>
+          <cylinder><radius>0.035</radius><length>0.10</length></cylinder>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

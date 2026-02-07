@@ -2,14 +2,24 @@
 <sdf version="1.9">
   <world name="default">
 
+    <!-- Core Gazebo Sim systems (REQUIRED) -->
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+
+    <!-- REQUIRED for camera / depth / lidar -->
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
     <!-- Physics engine -->
     <physics name="default_physics" type="bullet">
-      <max_step_size>0.001</max_step_size>
+      <max_step_size>0.004</max_step_size>
       <real_time_factor>1.0</real_time_factor>
-      <real_time_update_rate>1000</real_time_update_rate>
+      <real_time_update_rate>250</real_time_update_rate>
     </physics>
 
-    <!-- Simple light (replacement for model://sun) -->
+    <!-- Simple light -->
     <light name="sun" type="directional">
       <cast_shadows>true</cast_shadows>
       <pose>0 0 10 0 0 0</pose>
@@ -18,7 +28,7 @@
       <direction>-0.5 0.5 -1</direction>
     </light>
 
-    <!-- Simple ground plane (replacement for model://ground_plane) -->
+    <!-- Ground plane -->
     <model name="ground_plane">
       <static>true</static>
       <link name="link">
@@ -30,7 +40,6 @@
             </plane>
           </geometry>
         </collision>
-
         <visual name="visual">
           <geometry>
             <plane>

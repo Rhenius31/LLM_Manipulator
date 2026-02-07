@@ -1,0 +1,12 @@
+/apriltag:
+  ros__parameters:
+    family: 36h11
+    size: 0.05
+    max_hamming: 0
+    pose_estimation_method: pnp
+    detector:
+      decimate: 1.0
+      refine: true
+      threads: 2
+      blur: 0.0
+      sharpening: 0.25

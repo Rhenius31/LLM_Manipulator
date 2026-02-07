@@ -1,0 +1,19 @@
+material Apriltag/Tag0
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      ambient 1 1 1 1
+      diffuse 1 1 1 1
+      specular 0 0 0 1 0
+
+      texture_unit
+      {
+        texture tag36h11_0_upscaled.png
+        filtering none
+      }
+    }
+  }
+}
