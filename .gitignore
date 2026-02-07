@@ -18,3 +18,9 @@
 .vscode/
 .idea/
 .DS_Store
+
+# Python virtual envs
+.venvs/
+venv/
+.env/
+
