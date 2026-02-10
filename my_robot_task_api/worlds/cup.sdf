@@ -1,23 +1,32 @@
+<?xml version="1.0" ?>
 <sdf version="1.9">
   <model name="cup">
+    <pose>0.25 0.0 0.53 0 0 0</pose>
     <static>false</static>
-    <pose>0.25 0.0 0.75 0 0 0</pose>
     <link name="link">
-      <inertial><mass>0.2</mass></inertial>
-      <collision name="col">
+      <inertial>
+        <mass>0.2</mass>
+        <inertia>
+          <ixx>0.0002</ixx><iyy>0.0002</iyy><izz>0.0002</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+        </inertia>
+      </inertial>
+
+      <collision name="collision">
         <geometry>
           <cylinder><radius>0.035</radius><length>0.10</length></cylinder>
         </geometry>
       </collision>
-      <visual name="vis">
+
+      <visual name="visual">
         <geometry>
           <cylinder><radius>0.035</radius><length>0.10</length></cylinder>
         </geometry>
         <material>
-          <ambient>0.8 0.8 0.8 1</ambient>
           <diffuse>0.8 0.8 0.8 1</diffuse>
         </material>
       </visual>
+
     </link>
   </model>
 </sdf>
