@@ -91,7 +91,8 @@ class BBoxToPose(Node):
 
             self.pub_json.publish(String(data=json.dumps({"objects": objects})))
             self.get_logger().info(f"det cls={cls} u={u} v={v}", throttle_duration_sec=1.0)
-            self.get_logger().info(f"depth_frame={depth_header.frame_id}", throttle_duration_sec=1.0)
+            self.get_logger().info(f"using camera_frame={self.camera_frame}", throttle_duration_sec=2.0)
+
 
             patch = depth[v0:v1, u0:u1].astype(np.float32)
 
@@ -122,8 +123,8 @@ class BBoxToPose(Node):
             Y = (v - cy) * Z / fy
 
             pose_cam = PoseStamped()
-            pose_cam.header = depth_header
-            pose_cam.header.frame_id = depth_header.frame_id
+            pose_cam.header.stamp = self.get_clock().now().to_msg()
+            pose_cam.header.frame_id = self.camera_frame
             pose_cam.pose.position.x = X
             pose_cam.pose.position.y = Y
             pose_cam.pose.position.z = Z
@@ -133,7 +134,7 @@ class BBoxToPose(Node):
                 tf = self.tf_buffer.lookup_transform(
                 self.target_frame,
                 pose_cam.header.frame_id,
-                pose_cam.header.stamp,   # use sensor stamp
+                rclpy.time.Time(),   # use sensor stamp
                 timeout=rclpy.duration.Duration(seconds=0.5)
             )
 

@@ -21,7 +21,7 @@ from rclpy.executors import MultiThreadedExecutor
 class MoveGroupExecutor(Node):
     def __init__(self):
         super().__init__('task_executor')
-        self.set_parameters([rclpy.parameter.Parameter('use_sim_time', rclpy.Parameter.Type.BOOL, True)])
+        self.set_parameters([rclpy.parameter.Parameter('use_sim_time', rclpy.Parameter.Type.BOOL, False)])
 
 
         self.scene = {"objects": []}
@@ -119,25 +119,10 @@ class MoveGroupExecutor(Node):
 
     def make_pose_stamped(self, pose_dict, dz=0.0):
         ps = PoseStamped()
-        x = float(pose_dict["x"])
-        y = float(pose_dict["y"])
-        z = float(pose_dict["z"]) + dz
 
-# keep your z clamp (maybe tighten a bit)
-        z = max(0.20, min(z, 0.55))
-
-# NEW: pull points inward if too far
-        r = (x*x + y*y) ** 0.5
-        R_MAX = 0.45  # reachable radius (tune)
-        if r > R_MAX:
-            scale = R_MAX / r
-            x *= scale
-            y *= scale
-
-        ps.pose.position.x = x
-        ps.pose.position.y = y
-        ps.pose.position.z = z
-
+        ps.pose.position.x = float(pose_dict["x"])
+        ps.pose.position.y = float(pose_dict["y"])
+        ps.pose.position.z = float(pose_dict["z"]) + dz
 
         # For now keep neutral orientation; later we’ll set top-down quaternion
         ps.pose.orientation.w = 1.0
@@ -325,7 +310,7 @@ class MoveGroupExecutor(Node):
 
         if place_on["class"] == "table":
             # demo fixed spot on table (tune z to your table height)
-            place_pose = {"frame": self.base_frame, "x": 0.45, "y": -0.20, "z": 0.75}
+            place_pose = {"frame": self.base_frame, "x": 0.45, "y": -0.20, "z": 0.25}
         else:
             place_pose = self.select_object_pose(place_on["class"], place_on.get("index", 0))
 

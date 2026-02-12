@@ -29,7 +29,6 @@ class LLMPlanner(Node):
 
     def make_plan(self, user_cmd: str, scene: dict):
         cmd = user_cmd.lower()
-        # === Replace this with your actual LLM call ===
         # For now: simple rules that emulate what the LLM should output.
         objs = scene.get("objects", [])
         def has(cls_name: str) -> bool:

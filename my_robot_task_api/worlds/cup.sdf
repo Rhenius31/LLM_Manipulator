@@ -1,7 +1,7 @@
 <?xml version="1.0" ?>
 <sdf version="1.9">
   <model name="cup">
-    <pose>0.25 0.0 0.53 0 0 0</pose>
+    <pose>0.25 0.0 0.70 0 0 0</pose>
     <static>false</static>
     <link name="link">
       <inertial>

@@ -482,13 +482,29 @@
    </inertial>
   </link>
 
+  <link name="rgbd_camera_frame"/>
+<joint name="rgbd_camera_frame_joint" type="fixed">
+  <parent link="camera_link"/>
+  <child link="rgbd_camera_frame"/>
+  <origin xyz="0 0 0" rpy="0 0 0"/>
+</joint>
+
+<link name="rgbd_camera_optical_frame"/>
+<joint name="rgbd_camera_optical_joint" type="fixed">
+  <parent link="rgbd_camera_frame"/>
+  <child link="rgbd_camera_optical_frame"/>
+  <!-- ROS optical frame: rotate +90deg about X then +90deg about Z (or equivalent) -->
+  <origin xyz="0 0 0" rpy="-1.5708 0 -1.5708"/>
+</joint>
+
+
   <joint name="camera_joint" type="fixed">
     <!-- position the camera relative to base_link -->
     <parent link="base_link"/>
     <child link="camera_link"/>
     <origin xyz="0.25 0.0 1.20" rpy="0 1.57 0"/>
   </joint>
-  <gazebo reference="camera_link">
+  <gazebo reference="rgbd_camera_frame">
     <sensor name="rgbd_camera" type="rgbd_camera">
       <always_on>true</always_on>
       <update_rate>30</update_rate>

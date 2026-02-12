@@ -6,12 +6,12 @@
     <link name="link">
       <collision name="collision">
         <geometry>
-          <box><size>0.8 0.6 0.25</size></box>
+          <box><size>0.8 0.6 0.65</size></box>
         </geometry>
       </collision>
       <visual name="visual">
         <geometry>
-          <box><size>0.8 0.6 0.25</size></box>
+          <box><size>0.8 0.6 0.65</size></box>
         </geometry>
         <material>
           <diffuse>0.6 0.4 0.2 1</diffuse>
