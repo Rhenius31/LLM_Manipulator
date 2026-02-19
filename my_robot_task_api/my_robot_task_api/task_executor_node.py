@@ -9,6 +9,8 @@ from rclpy.task import Future
 from moveit_msgs.action import MoveGroup
 from moveit_msgs.msg import Constraints, PositionConstraint, OrientationConstraint
 from shape_msgs.msg import SolidPrimitive
+from moveit_msgs.msg import CollisionObject
+from geometry_msgs.msg import Pose
 from geometry_msgs.msg import Vector3
 from moveit_msgs.msg import MotionPlanRequest, WorkspaceParameters
 from moveit_msgs.srv import GetPositionIK
@@ -23,9 +25,16 @@ class MoveGroupExecutor(Node):
         super().__init__('task_executor')
         self.set_parameters([rclpy.parameter.Parameter('use_sim_time', rclpy.Parameter.Type.BOOL, False)])
 
+        self.group_name = "arm"
+        self.base_frame = "base_link"
+        self.collision_pub = self.create_publisher(CollisionObject, "/collision_object", 10)
+        self.add_table_collision()
+
 
         self.scene = {"objects": []}
         self.cb_group = ReentrantCallbackGroup()
+
+
 
         self.sub_scene = self.create_subscription(String, '/scene/objects_json', self.cb_scene, 10, callback_group=self.cb_group)
         self.sub_plan  = self.create_subscription(String, '/task_plan', self.cb_plan, 10, callback_group=self.cb_group)
@@ -64,7 +73,28 @@ class MoveGroupExecutor(Node):
 
         
 
-    
+    def add_table_collision(self):
+        co = CollisionObject()
+        co.id = "gazebo_table"
+        co.header.frame_id = self.base_frame  # use "base_link" (since your TF has world->base_link as identity)
+
+        prim = SolidPrimitive()
+        prim.type = SolidPrimitive.BOX
+        prim.dimensions = [0.8, 0.6, 0.68]  # x, y, z
+
+        p = Pose()
+        p.position.x = 0.6
+        p.position.y = 0.0
+        p.position.z = 0.15
+        p.orientation.w = 1.0
+
+        co.primitives.append(prim)
+        co.primitive_poses.append(p)
+        co.operation = CollisionObject.ADD
+
+        self.collision_pub.publish(co)
+        self.get_logger().info("Published table collision object to MoveIt")
+
     def send_joint_goal(self, joint_map: dict):
         req = MotionPlanRequest()
         req.group_name = self.group_name
@@ -125,7 +155,10 @@ class MoveGroupExecutor(Node):
         ps.pose.position.z = float(pose_dict["z"]) + dz
 
         # For now keep neutral orientation; later we’ll set top-down quaternion
-        ps.pose.orientation.w = 1.0
+        ps.pose.orientation.x = -0.002
+        ps.pose.orientation.y = -0.006
+        ps.pose.orientation.z = -0.263
+        ps.pose.orientation.w =  0.965
         return ps
 
 
@@ -251,10 +284,10 @@ class MoveGroupExecutor(Node):
 
         req = GetPositionIK.Request()
         req.ik_request.group_name = self.group_name
-        req.ik_request.ik_link_name = "end_effector_link"
+        req.ik_request.ik_link_name = "tool_frame"
         req.ik_request.pose_stamped = pose_stamped
         req.ik_request.timeout.sec = 3
-        req.ik_request.avoid_collisions = False
+        req.ik_request.avoid_collisions = True
         req.ik_request.robot_state = RobotState()
         req.ik_request.robot_state.is_diff = True
         if self.last_js is not None:
@@ -310,7 +343,7 @@ class MoveGroupExecutor(Node):
 
         if place_on["class"] == "table":
             # demo fixed spot on table (tune z to your table height)
-            place_pose = {"frame": self.base_frame, "x": 0.45, "y": -0.20, "z": 0.25}
+            place_pose = {"frame": self.base_frame, "x": 0.45, "y": -0.20, "z": 0.675}
         else:
             place_pose = self.select_object_pose(place_on["class"], place_on.get("index", 0))
 

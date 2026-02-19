@@ -123,7 +123,7 @@ class BBoxToPose(Node):
             Y = (v - cy) * Z / fy
 
             pose_cam = PoseStamped()
-            pose_cam.header.stamp = self.get_clock().now().to_msg()
+            pose_cam.header.stamp = depth_header.stamp
             pose_cam.header.frame_id = self.camera_frame
             pose_cam.pose.position.x = X
             pose_cam.pose.position.y = Y
@@ -133,11 +133,10 @@ class BBoxToPose(Node):
             try:
                 tf = self.tf_buffer.lookup_transform(
                 self.target_frame,
-                pose_cam.header.frame_id,
-                rclpy.time.Time(),   # use sensor stamp
+                self.camera_frame,
+                pose_cam.header.stamp,
                 timeout=rclpy.duration.Duration(seconds=0.5)
             )
-
                 pose_base = tf2_geometry_msgs.do_transform_pose_stamped(pose_cam, tf)
                 self.get_logger().info(
     f"TF OK -> base: x={pose_base.pose.position.x:.3f} y={pose_base.pose.position.y:.3f} z={pose_base.pose.position.z:.3f}",

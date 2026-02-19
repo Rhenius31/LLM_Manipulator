@@ -24,3 +24,7 @@
 venv/
 .env/
 
+
+# Local envs
+llm_env/
+
