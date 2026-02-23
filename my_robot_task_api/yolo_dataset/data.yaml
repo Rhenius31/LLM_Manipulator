@@ -1,0 +1,9 @@
+path: /home/rhenius/workspace/my_robot_task_api/yolo_dataset
+train: images/train
+val: images/train
+
+names:
+  0: cup
+  1: box
+  2: table
+  3: tray

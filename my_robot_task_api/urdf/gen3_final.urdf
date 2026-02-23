@@ -95,7 +95,7 @@
     <!--</xacro:if>-->
   </ros2_control>
   <joint name="base_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <origin rpy="0 0 0" xyz="0 0 0.30"/>
     <parent link="world"/>
     <child link="base_link"/>
   </joint>
@@ -502,27 +502,60 @@
     <!-- position the camera relative to base_link -->
     <parent link="base_link"/>
     <child link="camera_link"/>
-    <origin xyz="0.25 0.0 1.20" rpy="0 1.57 0"/>
+    <origin xyz="0.12 0.0 1.0" rpy="0 1.10 0"/>
   </joint>
-  <gazebo reference="rgbd_camera_frame">
-    <sensor name="rgbd_camera" type="rgbd_camera">
-      <always_on>true</always_on>
-      <update_rate>30</update_rate>
-      <topic>/rgbd_camera</topic>
-      <camera>
-       <horizontal_fov>1.047</horizontal_fov>
-        <image>
-          <width>640</width>
-          <height>480</height>
-          <format>R8G8B8</format>
-        </image>
-        <clip>
-          <near>0.05</near>
-          <far>10.0</far>
-        </clip>
-      </camera>
-    </sensor>
-  </gazebo>
+<gazebo reference="rgbd_camera_frame">
+  <!-- RGBD camera (keeps publishing topics like before) -->
+  <sensor name="rgbd_camera" type="rgbd_camera">
+    <always_on>true</always_on>
+    <update_rate>30</update_rate>
+    <topic>/rgbd_camera</topic>
+
+    <camera>
+      <horizontal_fov>0.8</horizontal_fov>
+      <image>
+        <width>640</width>
+        <height>480</height>
+        <format>R8G8B8</format>
+      </image>
+      <clip>
+        <near>0.05</near>
+        <far>2.0</far>
+      </clip>
+
+      <!-- Save RGB frames -->
+      <save enabled="true">
+        <path>dataset/rgb</path>
+      </save>
+    </camera>
+  </sensor>
+
+  <!-- Segmentation camera (for perfect labels) -->
+  <sensor name="seg_cam" type="segmentation">
+    <always_on>true</always_on>
+    <update_rate>10</update_rate>
+    <topic>/segmentation</topic>
+
+    <camera>
+      <segmentation_type>semantic</segmentation_type>
+      <horizontal_fov>1.047</horizontal_fov>
+      <image>
+        <width>640</width>
+        <height>480</height>
+      </image>
+      <clip>
+        <near>0.05</near>
+        <far>10.0</far>
+      </clip>
+
+      <!-- Save label maps -->
+      <save enabled="true">
+        <path>dataset/seg</path>
+      </save>
+    </camera>
+  </sensor>
+</gazebo>
+
   <gazebo>
     <plugin filename="libgz_ros2_control-system.so" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
       <parameters>/home/rhenius/workspace/ros2_kortex_ws/install/kinova_gen3_lite_moveit_config/share/kinova_gen3_lite_moveit_config/config/ros2_controllers.yaml</parameters>

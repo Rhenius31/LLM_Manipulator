@@ -55,5 +55,25 @@
       </link>
     </model>
 
+    <include>
+      <uri>file:///home/rhenius/workspace/my_robot_task_api/worlds/table.sdf</uri>
+      <pose>0.6 0.0 0.0 0 0 0</pose>
+    </include>
+
+    <include>
+      <uri>file:///home/rhenius/workspace/my_robot_task_api/worlds/box.sdf</uri>
+      <pose>0.35 -0.25 0.70 0 0 0</pose>
+    </include>
+
+    <include>
+      <uri>file:///home/rhenius/workspace/my_robot_task_api/worlds/cup.sdf</uri>
+      <pose>0.35 -0.1 0.70 0 0 0</pose>
+    </include>
+
+    <include>
+      <uri>file:///home/rhenius/workspace/my_robot_task_api/worlds/tray.sdf</uri>
+      <pose>0.45 0.15 0.70 0 0 0</pose>
+    </include>
+
   </world>
 </sdf>

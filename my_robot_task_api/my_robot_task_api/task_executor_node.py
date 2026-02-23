@@ -206,11 +206,11 @@ class MoveGroupExecutor(Node):
 
         self.seq = [
             ("pregrasp", self.make_pose_stamped(pick_pose, dz=0.15), False),  # free orientation far away
-            ("approach", self.make_pose_stamped(pick_pose, dz=0.05), True),   # enforce top-down near object
-            ("down",     self.make_pose_stamped(pick_pose, dz=0.02), True),   # final descend
+            ("approach", self.make_pose_stamped(pick_pose, dz=0.05), False),   # enforce top-down near object
+            ("down",     self.make_pose_stamped(pick_pose, dz=0.02), False),   # final descend
             ("lift",     self.make_pose_stamped(pick_pose, dz=0.15), False),
             ("preplace", self.make_pose_stamped(place_pose, dz=0.15), False),
-            ("lower",    self.make_pose_stamped(place_pose, dz=0.03), True),
+            ("lower",    self.make_pose_stamped(place_pose, dz=0.03), False),
             ("retreat",  self.make_pose_stamped(place_pose, dz=0.15), False),
         ]
         self.step_idx = 0

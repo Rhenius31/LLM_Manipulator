@@ -1,8 +1,14 @@
 <?xml version="1.0" ?>
 <sdf version="1.9">
   <model name="cup">
-    <pose>0.35 0.0 0.70 0 0 0</pose>
     <static>false</static>
+    <pose>0 0 0 0 0 0</pose>
+
+    <!-- Label: cup = 1 -->
+    <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+      <label>1</label>
+    </plugin>
+
     <link name="link">
       <inertial>
         <mass>0.2</mass>
@@ -12,21 +18,43 @@
         </inertia>
       </inertial>
 
+      <!-- Simple collision -->
       <collision name="collision">
         <geometry>
-          <cylinder><radius>0.035</radius><length>0.10</length></cylinder>
+          <cylinder>
+            <radius>0.04</radius>
+            <length>0.10</length>
+          </cylinder>
         </geometry>
       </collision>
 
-      <visual name="visual">
+      <!-- Outer wall visual -->
+      <visual name="outer">
         <geometry>
-          <cylinder><radius>0.035</radius><length>0.10</length></cylinder>
+          <cylinder>
+            <radius>0.04</radius>
+            <length>0.10</length>
+          </cylinder>
         </geometry>
         <material>
-          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <diffuse>0.9 0.9 0.9 1</diffuse>
         </material>
       </visual>
 
+      <!-- Inner cavity visual (purely visual to look like a cup) -->
+      <visual name="inner_cavity">
+        <pose>0 0 0.01 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.032</radius>
+            <length>0.08</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <diffuse>0.2 0.2 0.2 1</diffuse>
+        </material>
+        <transparency>0.3</transparency>
+      </visual>
     </link>
   </model>
 </sdf>
