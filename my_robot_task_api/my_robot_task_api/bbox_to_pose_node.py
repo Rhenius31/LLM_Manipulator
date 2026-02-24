@@ -134,7 +134,7 @@ class BBoxToPose(Node):
                 tf = self.tf_buffer.lookup_transform(
                 self.target_frame,
                 self.camera_frame,
-                pose_cam.header.stamp,
+                rclpy.time.Time(),
                 timeout=rclpy.duration.Duration(seconds=0.5)
             )
                 pose_base = tf2_geometry_msgs.do_transform_pose_stamped(pose_cam, tf)

@@ -38,7 +38,7 @@ class LLMPlanner(Node):
                 "class": "table",
                 "pose": {
                     "frame_id": "world",  # <-- IMPORTANT: static model pose is in world
-                    "position": {"x": 0.6, "y": 0.0, "z": 0.15},
+                    "position": {"x": 0.6, "y": 0.0, "z": 0.58},
                     "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
                 },
                 "source": "fixed_sdf"

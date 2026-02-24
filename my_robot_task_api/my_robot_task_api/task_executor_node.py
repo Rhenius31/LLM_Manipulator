@@ -18,6 +18,8 @@ from shape_msgs.msg import SolidPrimitive
 from moveit_msgs.msg import BoundingVolume
 from sensor_msgs.msg import JointState
 from rclpy.callback_groups import ReentrantCallbackGroup
+import numpy as np
+import tf2_ros
 
 
 class MoveGroupExecutor(Node):
@@ -33,11 +35,14 @@ class MoveGroupExecutor(Node):
         self.cb_group = ReentrantCallbackGroup()
 
         self.group_name = "arm"
-        self.base_frame = "base_link"
+        self.base_frame = "world"
         self.ee_link = "tool_frame"   # plan constraints for tool_frame
 
         # Hardcoded "top-down" quaternion (xyzw) from your tf2_echo
-        self.TOPDOWN = (0.999, -0.039, 0.003, 0.027)
+        #self.TOPDOWN = (0.999, -0.039, 0.003, 0.027)
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+
 
         # Scene
         self.scene = {"objects": []}
@@ -54,7 +59,7 @@ class MoveGroupExecutor(Node):
         # Collision publishing
         self.collision_pub = self.create_publisher(CollisionObject, "/collision_object", 10)
         # small delay so publisher connects before first publish
-        self.create_timer(0.5, self.add_table_collision, callback_group=self.cb_group)
+        #self.create_timer(0.5, self.add_table_collision, callback_group=self.cb_group)
 
         # MoveGroup action client
         self.client = ActionClient(self, MoveGroup, '/move_action', callback_group=self.cb_group)
@@ -87,12 +92,106 @@ class MoveGroupExecutor(Node):
         if index >= len(matches):
             index = 0
         return matches[index]["pose"]  # dict {frame,x,y,z}
+    
+    def quat_to_rot(self, q):
+    # q = (x,y,z,w)
+        x, y, z, w = q
+    # rotation matrix from quaternion
+        xx, yy, zz = x*x, y*y, z*z
+        xy, xz, yz = x*y, x*z, y*z
+        wx, wy, wz = w*x, w*y, w*z
+        return np.array([
+            [1 - 2*(yy+zz),     2*(xy-wz),       2*(xz+wy)],
+            [2*(xy+wz),         1 - 2*(xx+zz),   2*(yz-wx)],
+            [2*(xz-wy),         2*(yz+wx),       1 - 2*(xx+yy)],
+        ], dtype=float)
+
+    def rot_to_quat(self, R):
+    # rotation matrix -> quaternion (x,y,z,w)
+        tr = float(np.trace(R))
+        if tr > 0.0:
+            S = np.sqrt(tr + 1.0) * 2.0
+            w = 0.25 * S
+            x = (R[2,1] - R[1,2]) / S
+            y = (R[0,2] - R[2,0]) / S
+            z = (R[1,0] - R[0,1]) / S
+        else:
+            if (R[0,0] > R[1,1]) and (R[0,0] > R[2,2]):
+                S = np.sqrt(1.0 + R[0,0] - R[1,1] - R[2,2]) * 2.0
+                w = (R[2,1] - R[1,2]) / S
+                x = 0.25 * S
+                y = (R[0,1] + R[1,0]) / S
+                z = (R[0,2] + R[2,0]) / S
+            elif R[1,1] > R[2,2]:
+                S = np.sqrt(1.0 + R[1,1] - R[0,0] - R[2,2]) * 2.0
+                w = (R[0,2] - R[2,0]) / S
+                x = (R[0,1] + R[1,0]) / S
+                y = 0.25 * S
+                z = (R[1,2] + R[2,1]) / S
+            else:
+                S = np.sqrt(1.0 + R[2,2] - R[0,0] - R[1,1]) * 2.0
+                w = (R[1,0] - R[0,1]) / S
+                x = (R[0,2] + R[2,0]) / S
+                y = (R[1,2] + R[2,1]) / S
+                z = 0.25 * S
+
+    # normalize
+        q = np.array([x, y, z, w], dtype=float)
+        q /= np.linalg.norm(q) + 1e-12
+        return tuple(q.tolist())
+
+    def compute_tool_topdown_quat_world(self):
+        """
+        Returns a quaternion (x,y,z,w) in 'world' that makes tool_frame point down (tool Z = -world Z),
+        while keeping yaw close to the current tool yaw (uses current tool X projected to XY plane).
+        """
+        try:
+            tf = self.tf_buffer.lookup_transform(
+            self.base_frame,  # world
+            self.ee_link,     # tool_frame
+            rclpy.time.Time(),
+            timeout=rclpy.duration.Duration(seconds=0.2),
+            )
+        except Exception as e:
+            self.get_logger().warn(f"TF lookup failed for topdown: {e}")
+            return None
+
+        q_cur = (
+            tf.transform.rotation.x,
+            tf.transform.rotation.y,
+            tf.transform.rotation.z,
+            tf.transform.rotation.w,
+        )
+
+        Rcur = self.quat_to_rot(q_cur)
+
+    # Current tool X axis in world
+        x_cur = Rcur[:, 0]
+    # Project to world XY plane to preserve yaw
+        x_proj = np.array([x_cur[0], x_cur[1], 0.0], dtype=float)
+        n = np.linalg.norm(x_proj)
+        if n < 1e-6:
+            x_proj = np.array([1.0, 0.0, 0.0], dtype=float)
+        else:
+            x_proj /= n
+
+        z_down = np.array([0.0, 0.0, -1.0], dtype=float)
+
+    # Right-handed basis:
+        y_axis = np.cross(z_down, x_proj)
+        y_axis /= np.linalg.norm(y_axis) + 1e-12
+        x_axis = np.cross(y_axis, z_down)
+        x_axis /= np.linalg.norm(x_axis) + 1e-12
+
+        R = np.column_stack((x_axis, y_axis, z_down))
+        q = self.rot_to_quat(R)
+        if q is None:
+            return None
+        return (float(q[0]), float(q[1]), float(q[2]), float(q[3]))
+
+
 
     def add_table_collision(self):
-        # Your SDF:
-        # <pose>0.6 0.0 0.15 0 0 0</pose>
-        # <size>0.8 0.6 0.65</size>
-        # pose is CENTER of the box, so z=0.15 is correct center.
 
         co = CollisionObject()
         co.id = "gazebo_table"
@@ -100,12 +199,12 @@ class MoveGroupExecutor(Node):
 
         prim = SolidPrimitive()
         prim.type = SolidPrimitive.BOX
-        prim.dimensions = [0.8, 0.6, 0.65]
+        prim.dimensions = [0.8, 0.6, 0.04]
 
         p = Pose()
         p.position.x = 0.6
         p.position.y = 0.0
-        p.position.z = 0.15  # center
+        p.position.z = 0.58  # center
         p.orientation.w = 1.0
 
         co.primitives.append(prim)
@@ -127,19 +226,24 @@ class MoveGroupExecutor(Node):
         ps.pose.position.x = x
         ps.pose.position.y = y
         ps.pose.position.z = z
+
+        ps.pose.orientation.x = 0.0
+        ps.pose.orientation.y = 0.0
+        ps.pose.orientation.z = 0.0
+        ps.pose.orientation.w = 1.0
         return ps
 
-    def make_goal_constraints(self, pose_stamped: PoseStamped, use_topdown: bool):
+    def make_goal_constraints(self, pose_stamped: PoseStamped, use_topdown: bool, topdown_quat=None):
         c = Constraints()
 
-        # --- Position constraint: small sphere around target ---
+    # --- Position constraint: sphere around target ---
         pc = PositionConstraint()
         pc.header.frame_id = self.base_frame
         pc.link_name = self.ee_link
 
         sphere = SolidPrimitive()
         sphere.type = SolidPrimitive.SPHERE
-        sphere.dimensions = [0.02]  # 2cm radius (tune)
+        sphere.dimensions = [0.06]
 
         bv = BoundingVolume()
         bv.primitives.append(sphere)
@@ -153,37 +257,47 @@ class MoveGroupExecutor(Node):
         pc.weight = 1.0
         c.position_constraints.append(pc)
 
-        # --- Orientation constraint (optional) ---
+    # --- Orientation constraint (optional) ---
         if use_topdown:
-            oc = OrientationConstraint()
-            oc.header.frame_id = self.base_frame
-            oc.link_name = self.ee_link
-            oc.orientation.x, oc.orientation.y, oc.orientation.z, oc.orientation.w = self.TOPDOWN
+            q = topdown_quat if topdown_quat is not None else self.compute_tool_topdown_quat_world()
+            if q is not None:
+                oc = OrientationConstraint()
+                oc.header.frame_id = self.base_frame
+                oc.link_name = self.ee_link
+                oc.orientation.x = float(q[0])
+                oc.orientation.y = float(q[1])
+                oc.orientation.z = float(q[2])
+                oc.orientation.w = float(q[3])
 
-            # allow some tilt; yaw free
-            oc.absolute_x_axis_tolerance = 0.35
-            oc.absolute_y_axis_tolerance = 0.35
-            oc.absolute_z_axis_tolerance = 3.14
-            oc.weight = 1.0
-            c.orientation_constraints.append(oc)
+            # start loose, tighten later
+                oc.absolute_x_axis_tolerance = 1.5
+                oc.absolute_y_axis_tolerance = 1.5
+                oc.absolute_z_axis_tolerance = 3.14
+                oc.weight = 1.0
+                c.orientation_constraints.append(oc)
+            else:
+                self.get_logger().warn("Topdown TF failed; skipping orientation constraint for this step.")
 
         return c
+
+
 
     def send_pose_goal_constrained(self, pose_stamped: PoseStamped, use_topdown: bool):
         req = MotionPlanRequest()
         req.group_name = self.group_name
         req.pipeline_id = "ompl"
-        req.num_planning_attempts = 5
-        req.allowed_planning_time = 5.0
+        req.num_planning_attempts = 10
+        req.allowed_planning_time = 10.0
 
         # Start state
         req.start_state = RobotState()
         req.start_state.is_diff = True
-        if self.last_js is not None:
-            req.start_state.joint_state = self.last_js
-            req.start_state.is_diff = False
 
-        req.goal_constraints = [self.make_goal_constraints(pose_stamped, use_topdown)]
+        top_q = None
+        if use_topdown:
+            top_q = self.compute_tool_topdown_quat_world()
+
+        req.goal_constraints = [self.make_goal_constraints(pose_stamped, use_topdown, top_q)]
 
         goal = MoveGroup.Goal()
         goal.request = req
@@ -195,7 +309,10 @@ class MoveGroupExecutor(Node):
 
     def pick_and_place(self, pick_pose, place_pose):
         # Table top from your SDF
-        TABLE_TOP_Z = 0.15 + 0.65/2  # 0.475
+        TABLE_TOP_CENTER_Z = 0.58
+        TABLE_THICKNESS = 0.04
+        TABLE_TOP_Z = TABLE_TOP_CENTER_Z + TABLE_THICKNESS / 2.0  
+
 
         # Clamp pick z so you don't target below the table top
         pick_pose = dict(pick_pose)
@@ -206,11 +323,11 @@ class MoveGroupExecutor(Node):
 
         self.seq = [
             ("pregrasp", self.make_pose_stamped(pick_pose, dz=0.15), False),  # free orientation far away
-            ("approach", self.make_pose_stamped(pick_pose, dz=0.05), False),   # enforce top-down near object
-            ("down",     self.make_pose_stamped(pick_pose, dz=0.02), False),   # final descend
+            ("approach", self.make_pose_stamped(pick_pose, dz=0.05), True),   # enforce top-down near object
+            ("down",     self.make_pose_stamped(pick_pose, dz=0.02), True),   # final descend
             ("lift",     self.make_pose_stamped(pick_pose, dz=0.15), False),
             ("preplace", self.make_pose_stamped(place_pose, dz=0.15), False),
-            ("lower",    self.make_pose_stamped(place_pose, dz=0.03), False),
+            ("lower",    self.make_pose_stamped(place_pose, dz=0.03), True),
             ("retreat",  self.make_pose_stamped(place_pose, dz=0.15), False),
         ]
         self.step_idx = 0
@@ -282,7 +399,7 @@ class MoveGroupExecutor(Node):
             return
 
         if place_on["class"] == "table":
-            place_pose = {"frame": self.base_frame, "x": 0.45, "y": -0.20, "z": 0.475}
+            place_pose = {"frame": self.base_frame, "x": 0.45, "y": -0.20, "z": 0.60}
         else:
             place_pose = self.select_object_pose(place_on["class"], place_on.get("index", 0))
 
