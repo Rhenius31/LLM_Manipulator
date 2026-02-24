@@ -95,7 +95,7 @@
     <!--</xacro:if>-->
   </ros2_control>
   <joint name="base_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0.30"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
     <parent link="world"/>
     <child link="base_link"/>
   </joint>
@@ -512,7 +512,7 @@
     <topic>/rgbd_camera</topic>
 
     <camera>
-      <horizontal_fov>0.8</horizontal_fov>
+      <horizontal_fov>1.5</horizontal_fov>
       <image>
         <width>640</width>
         <height>480</height>
@@ -520,7 +520,7 @@
       </image>
       <clip>
         <near>0.05</near>
-        <far>2.0</far>
+        <far>5.0</far>
       </clip>
 
       <!-- Save RGB frames -->

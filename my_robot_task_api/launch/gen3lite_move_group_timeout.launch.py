@@ -25,7 +25,7 @@ def generate_launch_description():
             {"trajectory_execution": {
                 "allowed_execution_duration_scaling": 20.0,
                 "allowed_goal_duration_margin": 30.0,
-                "allowed_start_tolerance": 0.01,
+                "allowed_start_tolerance": 0.20,
             }},
         ],
     )
