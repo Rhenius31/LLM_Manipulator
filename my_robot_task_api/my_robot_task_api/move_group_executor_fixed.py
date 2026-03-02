@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 import json
 import numpy as np
+
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
+
 import tf2_ros
 
 from std_msgs.msg import String
@@ -12,7 +14,6 @@ from geometry_msgs.msg import PoseStamped, Pose
 from sensor_msgs.msg import JointState
 
 from control_msgs.action import GripperCommand
-
 from moveit_msgs.action import MoveGroup
 from moveit_msgs.msg import (
     MotionPlanRequest,
@@ -22,7 +23,10 @@ from moveit_msgs.msg import (
     CollisionObject,
     RobotState,
     BoundingVolume,
+    PlanningScene,
+    AttachedCollisionObject,
 )
+from moveit_msgs.srv import ApplyPlanningScene
 from shape_msgs.msg import SolidPrimitive
 
 
@@ -31,55 +35,54 @@ class MoveGroupExecutor(Node):
         super().__init__("task_executor")
 
         self.set_parameters([
-            rclpy.parameter.Parameter(
-                "use_sim_time",
-                rclpy.parameter.Parameter.Type.BOOL,
-                True
-            )
+            rclpy.parameter.Parameter("use_sim_time", rclpy.parameter.Parameter.Type.BOOL, True)
         ])
 
         self.cb_group = ReentrantCallbackGroup()
 
-        # --- MoveIt frames/links ---
+        # ---- Frames / links ----
         self.group_name = "arm"
-        # IMPORTANT: MoveIt for Gen3 Lite usually plans in base_link, not world.
-        self.base_frame = "base_link"
+        self.base_frame = "base_link"   # keep consistent with detector + MoveIt planning frame
         self.ee_link = "tool_frame"
 
-        # fingertip links (adjust if your TF tree uses different names)
+        # fingertip links
         self.left_tip_link = "left_finger_dist_link"
         self.right_tip_link = "right_finger_dist_link"
+
+        # Links allowed to touch object during grasp
+        self.touch_links = [
+            self.ee_link,
+            "left_finger_link",
+            "right_finger_link",
+            "left_finger_dist_link",
+            "right_finger_dist_link",
+        ]
+
         self._cached_tip_offset = None
+        self.GRASP_BIAS_TOOL = (0.0, 0.0, 0.02)
 
-        # compute once after TF is ready
-        self.create_timer(1.0, self._init_tip_offset_once, callback_group=self.cb_group)
-
-        # small bias to push grasp point slightly "into" the object along tool z/x if needed
-        self.GRASP_BIAS_TOOL = (0.0, 0.0, 0.03)
-
-        # TF
+        # ---- TF ----
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+        self.create_timer(1.0, self._init_tip_offset_once, callback_group=self.cb_group)
 
-        # Scene
+        # ---- Scene ----
         self.scene = {"objects": []}
-        self.sub_scene = self.create_subscription(
-            String, "/scene/objects_json", self.cb_scene, 10, callback_group=self.cb_group
-        )
-        self.sub_plan = self.create_subscription(
-            String, "/task_plan", self.cb_plan, 10, callback_group=self.cb_group
-        )
+        self.create_subscription(String, "/scene/objects_json", self.cb_scene, 10, callback_group=self.cb_group)
+        self.create_subscription(String, "/task_plan", self.cb_plan, 10, callback_group=self.cb_group)
 
-        # Joint states (used to seed start_state)
+        self._last_scene_publish_ns = 0
+        self.scene_publish_period_ns = int(0.5 * 1e9)  # 0.5s throttle
+        self._scene_object_ids = set()
+
+        # Joint states
         self.last_js = None
-        self.create_subscription(
-            JointState, "/joint_states", self.cb_js, 10, callback_group=self.cb_group
-        )
+        self.create_subscription(JointState, "/joint_states", self.cb_js, 10, callback_group=self.cb_group)
 
-        # --- Gripper (GripperActionController) ---
+        # ---- Gripper ----
         self.declare_parameter("gripper_action_name", "/gen3_lite_2f_gripper_controller/gripper_cmd")
-        self.declare_parameter("gripper_open", 0.1)      # tune for your controller (often 0.5..1.0)
-        self.declare_parameter("gripper_closed", 0.5)    # tune for your controller (often 0.0)
+        self.declare_parameter("gripper_open", 0.10)
+        self.declare_parameter("gripper_closed", 0.50)
         self.declare_parameter("gripper_effort", 50.0)
 
         self.gripper_action_name = self.get_parameter("gripper_action_name").value
@@ -87,25 +90,40 @@ class MoveGroupExecutor(Node):
         self.gripper_closed = float(self.get_parameter("gripper_closed").value)
         self.gripper_effort = float(self.get_parameter("gripper_effort").value)
 
-        self.gripper_client = ActionClient(
-            self, GripperCommand, self.gripper_action_name, callback_group=self.cb_group
-        )
+        self.gripper_client = ActionClient(self, GripperCommand, self.gripper_action_name, callback_group=self.cb_group)
         self.get_logger().info(f"Waiting for gripper action {self.gripper_action_name} ...")
         self.gripper_client.wait_for_server()
         self.get_logger().info("Connected to gripper action")
 
-        # Collision publishing
+        # ---- Planning Scene service ----
+        self.ps_client = self.create_client(ApplyPlanningScene, "/apply_planning_scene", callback_group=self.cb_group)
+        self.get_logger().info("Waiting for /apply_planning_scene ...")
+        self.ps_client.wait_for_service()
+        self.get_logger().info("Connected to /apply_planning_scene")
+
+        # Optional collision topic (for visualization / some setups)
         self.collision_pub = self.create_publisher(CollisionObject, "/collision_object", 10)
 
-        # publish table once after startup
         self._published_table = False
         self.create_timer(1.0, self._publish_table_once, callback_group=self.cb_group)
 
-        # MoveGroup action client
+        # ---- MoveGroup ----
         self.client = ActionClient(self, MoveGroup, "/move_action", callback_group=self.cb_group)
         self.get_logger().info("Waiting for /move_action...")
         self.client.wait_for_server()
         self.get_logger().info("Connected to /move_action")
+
+        # Object collision defaults (box sizes)
+        self.default_object_box = {
+            #"cup": (0.06, 0.06, 0.12),
+            "box": (0.06, 0.06, 0.06),
+            
+        }
+        self.fallback_box = (0.05, 0.05, 0.08)
+
+        # Active object being manipulated
+        self.active_object_id = None
+        self.active_object_prim = None
 
         # Sequence state
         self.busy = False
@@ -113,6 +131,8 @@ class MoveGroupExecutor(Node):
         self.step_idx = 0
         self.pending_goal = None
         self.pending_result = None
+        self._step_attempt = 0
+
         self.timer = self.create_timer(0.05, self.tick, callback_group=self.cb_group)
 
     # -------------------- callbacks --------------------
@@ -120,20 +140,76 @@ class MoveGroupExecutor(Node):
     def cb_js(self, msg: JointState):
         self.last_js = msg
 
+    def publish_scene_objects_as_collisions(self):
+        objs = self.scene.get("objects", [])
+        if not objs:
+            return
+
+        collision_list = []
+        new_ids = set()
+
+        for i, obj in enumerate(objs):
+            cls = obj.get("class", "obj")
+            pose = obj.get("pose", None)
+            if not pose:
+                continue
+
+        # IMPORTANT: force the pose to be in the same frame you publish in
+        # If your detector provides pose["frame"], you MUST keep it consistent with base_frame.
+        # Easiest: set base_frame to your detector frame (usually base_link).
+            if pose.get("frame", self.base_frame) != self.base_frame:
+            # If frames differ, skip for now (or implement transform)
+                self.get_logger().warn(
+                    f"Skipping {cls}_{i}: pose frame {pose.get('frame')} != base_frame {self.base_frame}"
+                )
+                continue
+
+            obj_id = f"scene_{cls}_{i}"
+            new_ids.add(obj_id)
+
+            co, _prim = self.make_object_collision(obj_id, cls, pose, shrink=0.01)
+            collision_list.append(co)
+
+    # Remove objects that disappeared from detections
+        removed = self._scene_object_ids - new_ids
+        for obj_id in removed:
+            co = CollisionObject()
+            co.id = obj_id
+            co.header.frame_id = self.base_frame
+            co.operation = CollisionObject.REMOVE
+            collision_list.append(co)
+
+        self._scene_object_ids = new_ids
+
+        if collision_list:
+        # Optional: publish for visualization
+            for co in collision_list:
+                self.collision_pub.publish(co)
+
+            self.apply_world_collision_objects_async(collision_list, label="scene_update")
+            self.get_logger().info(f"PlanningScene updated with {len(new_ids)} detected objects (and {len(removed)} removed)")
+
     def cb_scene(self, msg: String):
         try:
             self.scene = json.loads(msg.data)
         except Exception:
             return
 
+        now_ns = self.get_clock().now().nanoseconds
+        if now_ns - self._last_scene_publish_ns < self.scene_publish_period_ns:
+            return
+        self._last_scene_publish_ns = now_ns
+
+        self.publish_scene_objects_as_collisions()
+
     def select_object_pose(self, cls: str, index: int = 0):
         matches = [o for o in self.scene.get("objects", []) if o.get("class") == cls]
         if not matches:
-            return None
+            return None, None
         matches.sort(key=lambda o: o.get("score", 0.0), reverse=True)
         if index >= len(matches):
             index = 0
-        return matches[index]["pose"]
+        return matches[index]["pose"], matches[index]
 
     # -------------------- fingertip offset --------------------
 
@@ -144,23 +220,19 @@ class MoveGroupExecutor(Node):
         if off is not None:
             self._cached_tip_offset = off
             self.get_logger().info(
-                "Computed tool->grasp offset from fingertip midpoint: "
-                f"({off[0]:.3f}, {off[1]:.3f}, {off[2]:.3f}) in tool_frame"
+                f"Computed tool->grasp offset from fingertip midpoint: "
+                f"({off[0]:.3f}, {off[1]:.3f}, {off[2]:.3f}) in {self.ee_link}"
             )
 
     def compute_fingertip_midpoint_offset_tool(self):
-        """
-        Returns (x,y,z) = midpoint between left/right fingertip DIST links,
-        expressed in tool_frame coordinates.
-        """
         try:
             tl = self.tf_buffer.lookup_transform(
                 self.ee_link, self.left_tip_link, rclpy.time.Time(),
-                timeout=rclpy.duration.Duration(seconds=0.2)
+                timeout=rclpy.duration.Duration(seconds=0.3)
             )
             tr = self.tf_buffer.lookup_transform(
                 self.ee_link, self.right_tip_link, rclpy.time.Time(),
-                timeout=rclpy.duration.Duration(seconds=0.2)
+                timeout=rclpy.duration.Duration(seconds=0.3)
             )
             xl, yl, zl = tl.transform.translation.x, tl.transform.translation.y, tl.transform.translation.z
             xr, yr, zr = tr.transform.translation.x, tr.transform.translation.y, tr.transform.translation.z
@@ -168,6 +240,70 @@ class MoveGroupExecutor(Node):
         except Exception as e:
             self.get_logger().warn(f"Failed to compute fingertip midpoint offset: {e}")
             return None
+
+    # -------------------- apply_planning_scene (ASYNC) --------------------
+
+    def _on_apply_done(self, future, label: str):
+        try:
+            resp = future.result()
+            if resp is None or not resp.success:
+                self.get_logger().warn(f"{label}: apply_planning_scene failed")
+            else:
+                self.get_logger().info(f"{label}: apply_planning_scene ok")
+        except Exception as e:
+            self.get_logger().warn(f"{label}: apply_planning_scene exception: {e}")
+
+    def apply_world_collision_objects_async(self, collision_objects, label="world_objects"):
+        ps = PlanningScene()
+        ps.is_diff = True
+        ps.world.collision_objects = list(collision_objects)
+
+        req = ApplyPlanningScene.Request()
+        req.scene = ps
+        fut = self.ps_client.call_async(req)
+        fut.add_done_callback(lambda f: self._on_apply_done(f, label))
+        return fut
+
+    def attach_object_async(self, obj_id: str, prim: SolidPrimitive):
+        aco = AttachedCollisionObject()
+        aco.link_name = self.ee_link
+        aco.object = CollisionObject()
+        aco.object.id = obj_id
+        aco.object.header.frame_id = self.ee_link
+        aco.object.operation = CollisionObject.ADD
+        aco.touch_links = list(self.touch_links)
+
+        # Attach at ee origin (approx). Good enough for carried-object collision.
+        aco.object.primitives = [prim]
+        p = Pose()
+        p.orientation.w = 1.0
+        aco.object.primitive_poses = [p]
+
+        ps = PlanningScene()
+        ps.is_diff = True
+        ps.robot_state.attached_collision_objects = [aco]
+
+        req = ApplyPlanningScene.Request()
+        req.scene = ps
+        fut = self.ps_client.call_async(req)
+        fut.add_done_callback(lambda f: self._on_apply_done(f, f"attach({obj_id})"))
+        return fut
+
+    def detach_object_async(self, obj_id: str):
+        aco = AttachedCollisionObject()
+        aco.object = CollisionObject()
+        aco.object.id = obj_id
+        aco.object.operation = CollisionObject.REMOVE
+
+        ps = PlanningScene()
+        ps.is_diff = True
+        ps.robot_state.attached_collision_objects = [aco]
+
+        req = ApplyPlanningScene.Request()
+        req.scene = ps
+        fut = self.ps_client.call_async(req)
+        fut.add_done_callback(lambda f: self._on_apply_done(f, f"detach({obj_id})"))
+        return fut
 
     # -------------------- collision --------------------
 
@@ -178,26 +314,18 @@ class MoveGroupExecutor(Node):
         self._published_table = True
 
     def add_table_collision(self):
-        """
-        Table collision matching your SDF:
-          size: 0.8 x 0.6 x 0.04 (top slab)
-          pose in base_link: x=0.6, y=0.0, z=0.58 (center of slab)
-        NOTE: This assumes your table is indeed defined in base_link coordinates.
-        If your table is in 'world', either change base_frame back to 'world'
-        OR publish collision in 'world' and ensure MoveIt uses world planning frame.
-        """
         co = CollisionObject()
-        co.id = "gazebo_table_top"
+        co.id = "table_volume"
         co.header.frame_id = self.base_frame
 
         prim = SolidPrimitive()
         prim.type = SolidPrimitive.BOX
-        prim.dimensions = [0.8, 0.6, 0.04]
+        prim.dimensions = [0.8, 0.6, 0.58]
 
         p = Pose()
-        p.position.x = 0.6
-        p.position.y = 0.0
-        p.position.z = 0.58
+        p.position.x = 0.60
+        p.position.y = 0.00
+        p.position.z = 0.29
         p.orientation.w = 1.0
 
         co.primitives.append(prim)
@@ -205,7 +333,33 @@ class MoveGroupExecutor(Node):
         co.operation = CollisionObject.ADD
 
         self.collision_pub.publish(co)
-        self.get_logger().info("Published table collision object (/collision_object)")
+        self.apply_world_collision_objects_async([co], label="table")
+        self.get_logger().info("Published table collision volume")
+
+    def make_object_collision(self, obj_id: str, cls: str, pose_dict: dict, shrink: float = 0.01):
+        sx, sy, sz = self.default_object_box.get(cls, self.fallback_box)
+        sx = max(0.01, sx - shrink)
+        sy = max(0.01, sy - shrink)
+        sz = max(0.01, sz - shrink)
+
+        co = CollisionObject()
+        co.id = obj_id
+        co.header.frame_id = self.base_frame
+
+        prim = SolidPrimitive()
+        prim.type = SolidPrimitive.BOX
+        prim.dimensions = [float(sx), float(sy), float(sz)]
+
+        p = Pose()
+        p.position.x = float(pose_dict["x"])
+        p.position.y = float(pose_dict["y"])
+        p.position.z = float(pose_dict["z"])
+        p.orientation.w = 1.0
+
+        co.primitives = [prim]
+        co.primitive_poses = [p]
+        co.operation = CollisionObject.ADD
+        return co, prim
 
     # -------------------- math helpers --------------------
 
@@ -252,16 +406,11 @@ class MoveGroupExecutor(Node):
         q /= np.linalg.norm(q) + 1e-12
         return (float(q[0]), float(q[1]), float(q[2]), float(q[3]))
 
-    def compute_tool_topdown_quat_world(self):
-        """
-        Force tool_frame +X to point DOWN (base_frame -Z).
-        Preserve yaw by using current tool +Y projected onto base XY.
-        This matches your setup where tool_frame +X points forward.
-        """
+    def compute_tool_topdown_quat(self):
         try:
             tf = self.tf_buffer.lookup_transform(
                 self.base_frame, self.ee_link, rclpy.time.Time(),
-                timeout=rclpy.duration.Duration(seconds=0.2),
+                timeout=rclpy.duration.Duration(seconds=0.3),
             )
         except Exception as e:
             self.get_logger().warn(f"TF lookup failed for topdown: {e}")
@@ -275,7 +424,6 @@ class MoveGroupExecutor(Node):
         )
         Rcur = self.quat_to_rot(q_cur)
 
-    # Current tool +Y in base frame (helps preserve yaw / jaw orientation)
         y_cur = Rcur[:, 1]
         y_proj = np.array([y_cur[0], y_cur[1], 0.0], dtype=float)
         n = np.linalg.norm(y_proj)
@@ -284,34 +432,24 @@ class MoveGroupExecutor(Node):
         else:
             y_proj /= n
 
-    # Desired: tool +X points down
         x_axis = np.array([0.0, 0.0, -1.0], dtype=float)
-
-    # Make y orthogonal to x (Gram–Schmidt)
         y_axis = y_proj - np.dot(y_proj, x_axis) * x_axis
         y_axis /= np.linalg.norm(y_axis) + 1e-12
-
-    # Right-handed frame: z = x × y
         z_axis = np.cross(x_axis, y_axis)
         z_axis /= np.linalg.norm(z_axis) + 1e-12
 
         R = np.column_stack((x_axis, y_axis, z_axis))
         return self.rot_to_quat(R)
 
-
     # -------------------- pose helpers --------------------
 
     def make_pose_stamped(self, pose_dict, dz=0.0):
-        """
-        Assumes pose_dict is already in base_frame coordinates.
-        If your detector publishes in another frame, transform it before calling this.
-        """
         ps = PoseStamped()
         ps.header.frame_id = self.base_frame
         ps.header.stamp = self.get_clock().now().to_msg()
         ps.pose.position.x = float(pose_dict["x"])
         ps.pose.position.y = float(pose_dict["y"])
-        ps.pose.position.z = float(pose_dict["z"]) + dz
+        ps.pose.position.z = float(pose_dict["z"]) + float(dz)
         ps.pose.orientation.w = 1.0
         return ps
 
@@ -320,7 +458,6 @@ class MoveGroupExecutor(Node):
     def send_gripper(self, position: float, effort: float = None):
         if effort is None:
             effort = self.gripper_effort
-
         goal = GripperCommand.Goal()
         goal.command.position = float(position)
         goal.command.max_effort = float(effort)
@@ -334,14 +471,8 @@ class MoveGroupExecutor(Node):
 
     # -------------------- MoveIt constraints / goal --------------------
 
-    def make_goal_constraints(
-        self,
-        pose_stamped: PoseStamped,
-        use_topdown: bool,
-        radius: float,
-        use_tip: bool,
-        topdown_quat=None,
-    ):
+    def make_goal_constraints(self, pose_stamped: PoseStamped, radius: float, use_tip: bool,
+                              use_topdown: bool, topdown_quat, enforce_orientation: bool):
         c = Constraints()
 
         pc = PositionConstraint()
@@ -349,12 +480,7 @@ class MoveGroupExecutor(Node):
         pc.link_name = self.ee_link
 
         if use_tip:
-            off = self._cached_tip_offset
-            if off is None:
-                off = self.compute_fingertip_midpoint_offset_tool()
-            if off is None:
-                off = (0.0, 0.0, 0.0)
-
+            off = self._cached_tip_offset or (0.0, 0.0, 0.0)
             off = (
                 off[0] + self.GRASP_BIAS_TOOL[0],
                 off[1] + self.GRASP_BIAS_TOOL[1],
@@ -363,10 +489,6 @@ class MoveGroupExecutor(Node):
             pc.target_point_offset.x = float(off[0])
             pc.target_point_offset.y = float(off[1])
             pc.target_point_offset.z = float(off[2])
-        else:
-            pc.target_point_offset.x = 0.0
-            pc.target_point_offset.y = 0.0
-            pc.target_point_offset.z = 0.0
 
         sphere = SolidPrimitive()
         sphere.type = SolidPrimitive.SPHERE
@@ -384,8 +506,8 @@ class MoveGroupExecutor(Node):
         pc.weight = 1.0
         c.position_constraints.append(pc)
 
-        if use_topdown:
-            q = topdown_quat if topdown_quat is not None else self.compute_tool_topdown_quat_world()
+        if use_topdown and enforce_orientation:
+            q = topdown_quat
             if q is not None:
                 oc = OrientationConstraint()
                 oc.header.frame_id = self.base_frame
@@ -394,78 +516,87 @@ class MoveGroupExecutor(Node):
                 oc.orientation.y = float(q[1])
                 oc.orientation.z = float(q[2])
                 oc.orientation.w = float(q[3])
-                # fairly loose tolerances; tighten later
-                oc.absolute_x_axis_tolerance = 1.0
-                oc.absolute_y_axis_tolerance = 1.0
+                oc.absolute_x_axis_tolerance = 0.8
+                oc.absolute_y_axis_tolerance = 0.8
                 oc.absolute_z_axis_tolerance = 3.14
                 oc.weight = 1.0
                 c.orientation_constraints.append(oc)
-            else:
-                self.get_logger().warn("Topdown TF failed; skipping orientation constraint.")
 
         return c
 
-    def send_pose_goal_constrained(self, pose_stamped: PoseStamped, use_topdown: bool, radius: float, use_tip: bool):
+    def send_pose_goal_constrained(self, pose_stamped: PoseStamped,
+                                   radius: float, use_tip: bool,
+                                   use_topdown: bool, enforce_orientation: bool):
+
         req = MotionPlanRequest()
         req.group_name = self.group_name
 
-        # Let MoveIt pick its default pipeline unless you KNOW it's "ompl"
-        req.pipeline_id = "ompl"
-        req.num_planning_attempts = 20
-        req.allowed_planning_time = 20.0
+        req.pipeline_id = ""
+        req.planner_id = ""
+        req.num_planning_attempts = 15
+        req.allowed_planning_time = 15.0
+        req.max_velocity_scaling_factor = 0.2
+        req.max_acceleration_scaling_factor = 0.2
 
-        # Seed start state from /joint_states to avoid stale/unknown start state
         req.start_state = RobotState()
         if self.last_js is not None:
             req.start_state.joint_state = self.last_js
-            req.start_state.is_diff = False
+            req.start_state.is_diff = True
         else:
             req.start_state.is_diff = True
 
-        top_q = None
+        top_q = self.compute_tool_topdown_quat() if use_topdown else None
 
         req.goal_constraints = [
-            self.make_goal_constraints(pose_stamped, use_topdown, radius, use_tip, top_q)
+            self.make_goal_constraints(
+                pose_stamped=pose_stamped,
+                radius=radius,
+                use_tip=use_tip,
+                use_topdown=use_topdown,
+                topdown_quat=top_q,
+                enforce_orientation=enforce_orientation,
+            )
         ]
-        
 
         goal = MoveGroup.Goal()
         goal.request = req
         goal.planning_options.plan_only = False
         goal.planning_options.replan = True
-        goal.planning_options.replan_attempts = 5
+        goal.planning_options.replan_attempts = 2
+
         return self.client.send_goal_async(goal)
 
     # -------------------- task sequencing --------------------
 
-    def pick_and_place(self, pick_pose, place_pose):
-        # Table geometry (matches your collision object)
-        TABLE_TOP_CENTER_Z = 0.58
-        TABLE_THICKNESS = 0.04
-        TABLE_TOP_Z = TABLE_TOP_CENTER_Z + TABLE_THICKNESS / 2.0
-
+    def pick_and_place(self, pick_pose, place_pose, pick_cls="obj", pick_index=0):
         pick_pose = dict(pick_pose)
         place_pose = dict(place_pose)
 
-        # place slightly above table surface
-        place_pose["z"] = TABLE_TOP_Z + 0.02
+        place_pose["z"] = max(float(place_pose["z"]), 0.55)
 
-        # Put back approach/down so you actually reach the object before closing.
-        # Use topdown for grasping motions to keep gripper vertical.
+        obj_id = f"pick_{pick_cls}_{pick_index}"
+        co, prim = self.make_object_collision(obj_id, pick_cls, pick_pose, shrink=0.01)
+        self.collision_pub.publish(co)
+        self.apply_world_collision_objects_async([co], label=f"add_obj({obj_id})")
+
+        self.active_object_id = obj_id
+        self.active_object_prim = prim
+
         self.seq = [
-            ("pregrasp", self.make_pose_stamped(pick_pose, dz=0.10), True),
-            ("approach", self.make_pose_stamped(pick_pose, dz=0.05), True),
-            ("down",     self.make_pose_stamped(pick_pose, dz=0.05), True),
+            ("pregrasp", self.make_pose_stamped(pick_pose, dz=0.12), False),
+            ("approach", self.make_pose_stamped(pick_pose, dz=0.04), True),
+            ("down",     self.make_pose_stamped(pick_pose, dz=0.01), True),
             ("gripper_close", None, False),
-            ("lift",     self.make_pose_stamped(pick_pose, dz=0.15), True),
+            ("lift",     self.make_pose_stamped(pick_pose, dz=0.18), False),
 
-            ("preplace", self.make_pose_stamped(place_pose, dz=0.15), True),
-            ("lower",    self.make_pose_stamped(place_pose, dz=0.05), True),
+            ("preplace", self.make_pose_stamped(place_pose, dz=0.18), False),
+            ("lower",    self.make_pose_stamped(place_pose, dz=0.03), True),
             ("gripper_open", None, False),
-            ("retreat",  self.make_pose_stamped(place_pose, dz=0.15), True),
+            ("retreat",  self.make_pose_stamped(place_pose, dz=0.18), False),
         ]
 
         self.step_idx = 0
+        self._step_attempt = 0
         self.busy = True
         self.pending_goal = None
         self.pending_result = None
@@ -498,57 +629,41 @@ class MoveGroupExecutor(Node):
                 return
 
             if self.pending_result is not None and self.pending_result.done():
-                # You could check res.status here if you want, but many controllers always return success.
+                if name == "gripper_close" and self.active_object_id and self.active_object_prim:
+                    self.attach_object_async(self.active_object_id, self.active_object_prim)
+
+                if name == "gripper_open" and self.active_object_id:
+                    self.detach_object_async(self.active_object_id)
+
                 self.pending_goal = None
                 self.pending_result = None
                 self.step_idx += 1
+                self._step_attempt = 0
             return
 
-        # Use fingertip midpoint for approach/down/lower so the *grasp point* hits the target.
         use_tip = name in ("approach", "down", "lower")
 
-        # Tight radius for precise contact steps, looser for travel steps
-        if name in ("down", "lower"):
-            radius = 0.01
-        elif name == "approach":
-            radius = 0.03
+        if name == "down":
+            radius = 0.012
+        elif name in ("approach", "lower"):
+            radius = 0.06
         else:
             radius = 0.08
 
+        enforce_orientation = (name == "down")
+
+        if self._step_attempt >= 1:
+            enforce_orientation = False
+            radius = max(radius, 0.08)
+
         if self.pending_goal is None and self.pending_result is None:
-            # Debug print tool/tip/target
-            try:
-                tf = self.tf_buffer.lookup_transform(
-                    self.base_frame, self.ee_link, rclpy.time.Time(),
-                    timeout=rclpy.duration.Duration(seconds=0.1)
-                )
-                cx, cy, cz = tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z
-                q = (
-                    tf.transform.rotation.x,
-                    tf.transform.rotation.y,
-                    tf.transform.rotation.z,
-                    tf.transform.rotation.w
-                )
-                R = self.quat_to_rot(q)
-                off = self._cached_tip_offset if self._cached_tip_offset is not None else (0.0, 0.0, 0.0)
-                if use_tip:
-                    off = (off[0] + self.GRASP_BIAS_TOOL[0],
-                           off[1] + self.GRASP_BIAS_TOOL[1],
-                           off[2] + self.GRASP_BIAS_TOOL[2])
-                else:
-                    off = (0.0, 0.0, 0.0)
-                tip = np.array([cx, cy, cz]) + R @ np.array(off, dtype=float)
-
-                tx, ty, tz = ps.pose.position.x, ps.pose.position.y, ps.pose.position.z
-                self.get_logger().info(
-                    f"{name}: tool=({cx:.3f},{cy:.3f},{cz:.3f}) tip=({tip[0]:.3f},{tip[1]:.3f},{tip[2]:.3f}) "
-                    f"target=({tx:.3f},{ty:.3f},{tz:.3f}) r={radius:.3f} topdown={use_topdown} use_tip={use_tip}"
-                )
-            except Exception:
-                pass
-
-            self.get_logger().info(f"Step {self.step_idx+1}/{len(self.seq)}: {name}")
-            self.pending_goal = self.send_pose_goal_constrained(ps, use_topdown, radius, use_tip)
+            self.get_logger().info(
+                f"Step {self.step_idx+1}/{len(self.seq)}: {name} "
+                f"(attempt {self._step_attempt+1}, r={radius:.3f}, topdown={use_topdown}, enforce_ori={enforce_orientation}, use_tip={use_tip})"
+            )
+            self.pending_goal = self.send_pose_goal_constrained(
+                ps, radius=radius, use_tip=use_tip, use_topdown=use_topdown, enforce_orientation=enforce_orientation
+            )
             return
 
         if self.pending_goal is not None and self.pending_goal.done() and self.pending_result is None:
@@ -563,14 +678,24 @@ class MoveGroupExecutor(Node):
         if self.pending_result is not None and self.pending_result.done():
             res = self.pending_result.result()
             err = res.result.error_code.val if res else -999
+
             if err != 1:
-                self.get_logger().error(f"MoveGroup failed, error_code={err}")
+                self.get_logger().warn(f"MoveGroup failed at '{name}', error_code={err}")
+
+                if self._step_attempt < 1:
+                    self.get_logger().warn(f"Retrying step '{name}' with relaxed constraints...")
+                    self._step_attempt += 1
+                    self.pending_goal = None
+                    self.pending_result = None
+                    return
+
                 self.busy = False
                 return
 
             self.pending_goal = None
             self.pending_result = None
             self.step_idx += 1
+            self._step_attempt = 0
 
     # -------------------- plan callback --------------------
 
@@ -587,22 +712,26 @@ class MoveGroupExecutor(Node):
         pick = plan["objects"]["pick"]
         place_on = plan["objects"]["place_on"]
 
-        pick_pose = self.select_object_pose(pick["class"], pick.get("index", 0))
+        pick_pose, _ = self.select_object_pose(pick["class"], int(pick.get("index", 0)))
         if not pick_pose:
             self.get_logger().error(f"No object detected for class '{pick['class']}'")
             return
 
-        # If placing on table, use a fixed pose (in base_frame coordinates)
         if place_on["class"] == "table":
             place_pose = {"frame": self.base_frame, "x": 0.45, "y": -0.20, "z": 0.60}
         else:
-            place_pose = self.select_object_pose(place_on["class"], place_on.get("index", 0))
+            place_pose, _ = self.select_object_pose(place_on["class"], int(place_on.get("index", 0)))
 
         if not place_pose:
             self.get_logger().error(f"No place target for class '{place_on['class']}'")
             return
 
-        self.pick_and_place(pick_pose, place_pose)
+        self.pick_and_place(
+            pick_pose=pick_pose,
+            place_pose=place_pose,
+            pick_cls=pick["class"],
+            pick_index=int(pick.get("index", 0)),
+        )
 
 
 def main():

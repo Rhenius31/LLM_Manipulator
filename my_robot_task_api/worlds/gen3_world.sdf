@@ -67,7 +67,7 @@
 
     <include>
       <uri>file:///home/rhenius/workspace/my_robot_task_api/worlds/cup.sdf</uri>
-      <pose>0.35 -0.1 0.70 0 0 0</pose>
+      <pose>0.5 -0.1 0.70 0 0 0</pose>
     </include>
 
     <include>
