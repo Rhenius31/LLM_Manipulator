@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import json
 import numpy as np
-
 import rclpy
+
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -42,7 +42,7 @@ class MoveGroupExecutor(Node):
 
         # ---- Frames / links ----
         self.group_name = "arm"
-        self.base_frame = "base_link"   # keep consistent with detector + MoveIt planning frame
+        self.base_frame = "base_link"
         self.ee_link = "tool_frame"
 
         # fingertip links
@@ -56,6 +56,8 @@ class MoveGroupExecutor(Node):
             "right_finger_link",
             "left_finger_dist_link",
             "right_finger_dist_link",
+            "left_finger_prox_link",
+            "right_finger_prox_link",
         ]
 
         self._cached_tip_offset = None
@@ -74,6 +76,8 @@ class MoveGroupExecutor(Node):
         self._last_scene_publish_ns = 0
         self.scene_publish_period_ns = int(0.5 * 1e9)  # 0.5s throttle
         self._scene_object_ids = set()
+        self.publish_scene_collisions = True
+        self._last_place_pose = None
 
         # Joint states
         self.last_js = None
@@ -101,11 +105,8 @@ class MoveGroupExecutor(Node):
         self.ps_client.wait_for_service()
         self.get_logger().info("Connected to /apply_planning_scene")
 
-        # Optional collision topic (for visualization / some setups)
+        # Optional collision topic (some setups visualize this; PlanningScene is the real authority)
         self.collision_pub = self.create_publisher(CollisionObject, "/collision_object", 10)
-
-        self._published_table = False
-        self.create_timer(1.0, self._publish_table_once, callback_group=self.cb_group)
 
         # ---- MoveGroup ----
         self.client = ActionClient(self, MoveGroup, "/move_action", callback_group=self.cb_group)
@@ -115,17 +116,20 @@ class MoveGroupExecutor(Node):
 
         # Object collision defaults (box sizes)
         self.default_object_box = {
-            #"cup": (0.06, 0.06, 0.12),
-            "box": (0.06, 0.06, 0.06),
-            
+            "cup": (0.06, 0.06, 0.12),
+            "box": (0.1, 0.1, 0.1),
+            "tray": (0.25, 0.18, 0.02),
         }
-        self.fallback_box = (0.05, 0.05, 0.08)
+        self.fallback_box = (0.06, 0.06, 0.10)
 
         # Active object being manipulated
         self.active_object_id = None
         self.active_object_prim = None
 
-        # Sequence state
+        # Track which scene_* object we removed as duplicate for the picked instance
+        self._picked_scene_dup_id = None
+
+        # ---- Sequence state ----
         self.busy = False
         self.seq = []
         self.step_idx = 0
@@ -133,61 +137,21 @@ class MoveGroupExecutor(Node):
         self.pending_result = None
         self._step_attempt = 0
 
+        # sync step timer
+        self._sync_until_ns = 0
+
         self.timer = self.create_timer(0.05, self.tick, callback_group=self.cb_group)
+
+        # table collision
+        self.enable_table_collision = True
+        if self.enable_table_collision:
+            self._published_table = False
+            self.create_timer(1.0, self._publish_table_once, callback_group=self.cb_group)
 
     # -------------------- callbacks --------------------
 
     def cb_js(self, msg: JointState):
         self.last_js = msg
-
-    def publish_scene_objects_as_collisions(self):
-        objs = self.scene.get("objects", [])
-        if not objs:
-            return
-
-        collision_list = []
-        new_ids = set()
-
-        for i, obj in enumerate(objs):
-            cls = obj.get("class", "obj")
-            pose = obj.get("pose", None)
-            if not pose:
-                continue
-
-        # IMPORTANT: force the pose to be in the same frame you publish in
-        # If your detector provides pose["frame"], you MUST keep it consistent with base_frame.
-        # Easiest: set base_frame to your detector frame (usually base_link).
-            if pose.get("frame", self.base_frame) != self.base_frame:
-            # If frames differ, skip for now (or implement transform)
-                self.get_logger().warn(
-                    f"Skipping {cls}_{i}: pose frame {pose.get('frame')} != base_frame {self.base_frame}"
-                )
-                continue
-
-            obj_id = f"scene_{cls}_{i}"
-            new_ids.add(obj_id)
-
-            co, _prim = self.make_object_collision(obj_id, cls, pose, shrink=0.01)
-            collision_list.append(co)
-
-    # Remove objects that disappeared from detections
-        removed = self._scene_object_ids - new_ids
-        for obj_id in removed:
-            co = CollisionObject()
-            co.id = obj_id
-            co.header.frame_id = self.base_frame
-            co.operation = CollisionObject.REMOVE
-            collision_list.append(co)
-
-        self._scene_object_ids = new_ids
-
-        if collision_list:
-        # Optional: publish for visualization
-            for co in collision_list:
-                self.collision_pub.publish(co)
-
-            self.apply_world_collision_objects_async(collision_list, label="scene_update")
-            self.get_logger().info(f"PlanningScene updated with {len(new_ids)} detected objects (and {len(removed)} removed)")
 
     def cb_scene(self, msg: String):
         try:
@@ -200,7 +164,9 @@ class MoveGroupExecutor(Node):
             return
         self._last_scene_publish_ns = now_ns
 
-        self.publish_scene_objects_as_collisions()
+        # Publish scene collisions only when idle (keeps planning scene stable during pick)
+        if self.publish_scene_collisions and (not self.busy):
+            self.publish_scene_objects_as_collisions()
 
     def select_object_pose(self, cls: str, index: int = 0):
         matches = [o for o in self.scene.get("objects", []) if o.get("class") == cls]
@@ -211,7 +177,44 @@ class MoveGroupExecutor(Node):
             index = 0
         return matches[index]["pose"], matches[index]
 
-    # -------------------- fingertip offset --------------------
+    # -------------------- scene collision publishing --------------------
+
+    def publish_scene_objects_as_collisions(self):
+        objs = self.scene.get("objects", [])
+        if not objs:
+            return
+
+        collision_list = []
+
+        for i, obj in enumerate(objs):
+            cls = obj.get("class", "obj")
+            pose = obj.get("pose", None)
+            if not pose:
+                continue
+
+            # Skip tray if it causes noise (optional)
+            if cls == "tray":
+                continue
+
+            if pose.get("frame", self.base_frame) != self.base_frame:
+                self.get_logger().warn(
+                    f"Skipping {cls}_{i}: pose frame {pose.get('frame')} != base_frame {self.base_frame}"
+                )
+                continue
+
+            obj_id = f"scene_{cls}_{i}"
+            self._scene_object_ids.add(obj_id)
+
+            co, _prim = self.make_object_collision(obj_id, cls, pose, shrink=0.01)
+            collision_list.append(co)
+
+        if collision_list:
+            for co in collision_list:
+                self.collision_pub.publish(co)
+            self.apply_world_collision_objects_async(collision_list, label="scene_update")
+            self.get_logger().info(f"PlanningScene updated with {len(collision_list)} detected objects")
+
+    # -------------------- fingertip offset + picking duplicate lookup --------------------
 
     def _init_tip_offset_once(self):
         if self._cached_tip_offset is not None:
@@ -223,6 +226,33 @@ class MoveGroupExecutor(Node):
                 f"Computed tool->grasp offset from fingertip midpoint: "
                 f"({off[0]:.3f}, {off[1]:.3f}, {off[2]:.3f}) in {self.ee_link}"
             )
+
+    def _dist2_pose(self, a: dict, b: dict) -> float:
+        dx = float(a["x"]) - float(b["x"])
+        dy = float(a["y"]) - float(b["y"])
+        dz = float(a["z"]) - float(b["z"])
+        return dx*dx + dy*dy + dz*dz
+
+    def find_closest_scene_object_id(self, cls: str, pick_pose: dict):
+        """
+        Returns the scene_* id for the closest detected object of class `cls`.
+        Avoids relying on unstable indices from score sorting.
+        """
+        best_id = None
+        best_d2 = 1e9
+        for i, obj in enumerate(self.scene.get("objects", [])):
+            if obj.get("class") != cls:
+                continue
+            pose = obj.get("pose")
+            if not pose:
+                continue
+            if pose.get("frame", self.base_frame) != self.base_frame:
+                continue
+            d2 = self._dist2_pose(pose, pick_pose)
+            if d2 < best_d2:
+                best_d2 = d2
+                best_id = f"scene_{cls}_{i}"
+        return best_id
 
     def compute_fingertip_midpoint_offset_tool(self):
         try:
@@ -273,7 +303,6 @@ class MoveGroupExecutor(Node):
         aco.object.operation = CollisionObject.ADD
         aco.touch_links = list(self.touch_links)
 
-        # Attach at ee origin (approx). Good enough for carried-object collision.
         aco.object.primitives = [prim]
         p = Pose()
         p.orientation.w = 1.0
@@ -308,7 +337,7 @@ class MoveGroupExecutor(Node):
     # -------------------- collision --------------------
 
     def _publish_table_once(self):
-        if self._published_table:
+        if getattr(self, "_published_table", False):
             return
         self.add_table_collision()
         self._published_table = True
@@ -336,6 +365,13 @@ class MoveGroupExecutor(Node):
         self.apply_world_collision_objects_async([co], label="table")
         self.get_logger().info("Published table collision volume")
 
+    def remove_world_object_async(self, obj_id: str):
+        co = CollisionObject()
+        co.id = obj_id
+        co.header.frame_id = self.base_frame
+        co.operation = CollisionObject.REMOVE
+        return self.apply_world_collision_objects_async([co], label=f"world_remove({obj_id})")
+
     def make_object_collision(self, obj_id: str, cls: str, pose_dict: dict, shrink: float = 0.01):
         sx, sy, sz = self.default_object_box.get(cls, self.fallback_box)
         sx = max(0.01, sx - shrink)
@@ -353,7 +389,7 @@ class MoveGroupExecutor(Node):
         p = Pose()
         p.position.x = float(pose_dict["x"])
         p.position.y = float(pose_dict["y"])
-        p.position.z = float(pose_dict["z"])
+        p.position.z = float(pose_dict["z"])  
         p.orientation.w = 1.0
 
         co.primitives = [prim]
@@ -569,11 +605,23 @@ class MoveGroupExecutor(Node):
     # -------------------- task sequencing --------------------
 
     def pick_and_place(self, pick_pose, place_pose, pick_cls="obj", pick_index=0):
+        # Keep scene collisions ON (so other objects remain collidable)
+        self.publish_scene_collisions = True
+
         pick_pose = dict(pick_pose)
         place_pose = dict(place_pose)
-
+        self._last_place_pose = dict(place_pose)
         place_pose["z"] = max(float(place_pose["z"]), 0.55)
 
+        # Remove ONLY the duplicate scene_* object that corresponds to this picked instance
+        self._picked_scene_dup_id = self.find_closest_scene_object_id(pick_cls, pick_pose)
+        if self._picked_scene_dup_id:
+            self.get_logger().info(f"Removing duplicate for picked object: {self._picked_scene_dup_id}")
+            self.remove_world_object_async(self._picked_scene_dup_id)
+            if self._picked_scene_dup_id in self._scene_object_ids:
+                self._scene_object_ids.remove(self._picked_scene_dup_id)
+
+        # Add a dedicated pick_* collision object for grasping
         obj_id = f"pick_{pick_cls}_{pick_index}"
         co, prim = self.make_object_collision(obj_id, pick_cls, pick_pose, shrink=0.01)
         self.collision_pub.publish(co)
@@ -583,15 +631,15 @@ class MoveGroupExecutor(Node):
         self.active_object_prim = prim
 
         self.seq = [
-            ("pregrasp", self.make_pose_stamped(pick_pose, dz=0.12), False),
-            ("approach", self.make_pose_stamped(pick_pose, dz=0.04), True),
+            #("approach", self.make_pose_stamped(pick_pose, dz=0.04), True),
             ("down",     self.make_pose_stamped(pick_pose, dz=0.01), True),
             ("gripper_close", None, False),
+            ("sync_scene", None, False),
             ("lift",     self.make_pose_stamped(pick_pose, dz=0.18), False),
 
-            ("preplace", self.make_pose_stamped(place_pose, dz=0.18), False),
-            ("lower",    self.make_pose_stamped(place_pose, dz=0.03), True),
+            ("lower",    self.make_pose_stamped(place_pose, dz=0.01), True),
             ("gripper_open", None, False),
+            ("sync_scene", None, False),
             ("retreat",  self.make_pose_stamped(place_pose, dz=0.18), False),
         ]
 
@@ -600,17 +648,31 @@ class MoveGroupExecutor(Node):
         self.busy = True
         self.pending_goal = None
         self.pending_result = None
+        self._sync_until_ns = 0
         self.get_logger().info("Sequence queued")
 
     def tick(self):
         if not self.busy:
             return
+
         if self.step_idx >= len(self.seq):
             self.get_logger().info("Sequence done")
             self.busy = False
+            # when idle again, cb_scene will republish scene collisions (including the released object)
             return
 
         name, ps, use_topdown = self.seq[self.step_idx]
+
+        # --- sync step (non-blocking wait) ---
+        if name == "sync_scene":
+            if self._sync_until_ns == 0:
+                self._sync_until_ns = self.get_clock().now().nanoseconds + int(0.25 * 1e9)
+                self.get_logger().info(f"Step {self.step_idx+1}/{len(self.seq)}: sync_scene (250ms)")
+                return
+            if self.get_clock().now().nanoseconds >= self._sync_until_ns:
+                self._sync_until_ns = 0
+                self.step_idx += 1
+            return
 
         # --- Gripper-only steps ---
         if name in ("gripper_close", "gripper_open"):
@@ -630,10 +692,37 @@ class MoveGroupExecutor(Node):
 
             if self.pending_result is not None and self.pending_result.done():
                 if name == "gripper_close" and self.active_object_id and self.active_object_prim:
+                    # attach then remove world copy so finger contact isn't a start-state collision
                     self.attach_object_async(self.active_object_id, self.active_object_prim)
+                    self.remove_world_object_async(self.active_object_id)
 
                 if name == "gripper_open" and self.active_object_id:
+    # 1) detach from robot
                     self.detach_object_async(self.active_object_id)
+
+    # 2) put it back into the world at the place pose (so it’s collidable again)
+                    if self._last_place_pose is not None and self.active_object_prim is not None:
+                        co = CollisionObject()
+                        co.id = self.active_object_id
+                        co.header.frame_id = self.base_frame
+                        co.operation = CollisionObject.ADD
+                        co.primitives = [self.active_object_prim]
+
+                        p = Pose()
+                        p.position.x = float(self._last_place_pose["x"])
+                        p.position.y = float(self._last_place_pose["y"])
+        # place pose is usually on surface -> shift to center
+                        p.position.z = float(self._last_place_pose["z"]) + 0.5 * float(self.active_object_prim.dimensions[2])
+                        p.orientation.w = 1.0
+                        co.primitive_poses = [p]
+
+                        self.collision_pub.publish(co)
+                        self.apply_world_collision_objects_async([co], label=f"world_add({self.active_object_id})")
+
+    # 3) clear active object tracking
+                    self.active_object_id = None
+                    self.active_object_prim = None
+                    # After release, do nothing special: next cb_scene publish will re-add scene_* objects.
 
                 self.pending_goal = None
                 self.pending_result = None
@@ -641,6 +730,7 @@ class MoveGroupExecutor(Node):
                 self._step_attempt = 0
             return
 
+        # --- Motion steps ---
         use_tip = name in ("approach", "down", "lower")
 
         if name == "down":
@@ -659,7 +749,8 @@ class MoveGroupExecutor(Node):
         if self.pending_goal is None and self.pending_result is None:
             self.get_logger().info(
                 f"Step {self.step_idx+1}/{len(self.seq)}: {name} "
-                f"(attempt {self._step_attempt+1}, r={radius:.3f}, topdown={use_topdown}, enforce_ori={enforce_orientation}, use_tip={use_tip})"
+                f"(attempt {self._step_attempt+1}, r={radius:.3f}, topdown={use_topdown}, "
+                f"enforce_ori={enforce_orientation}, use_tip={use_tip})"
             )
             self.pending_goal = self.send_pose_goal_constrained(
                 ps, radius=radius, use_tip=use_tip, use_topdown=use_topdown, enforce_orientation=enforce_orientation
