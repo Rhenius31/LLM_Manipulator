@@ -116,11 +116,11 @@ class MoveGroupExecutor(Node):
 
         # Object collision defaults (box sizes)
         self.default_object_box = {
-            "cup": (0.06, 0.06, 0.12),
-            "box": (0.1, 0.1, 0.1),
-            "tray": (0.25, 0.18, 0.02),
+            "cup": (0.08, 0.08, 0.10),
+            "box": (0.06, 0.06, 0.06),
+            "tray": (0.30, 0.20, 0.03),
         }
-        self.fallback_box = (0.06, 0.06, 0.10)
+        self.fallback_box = (0.06, 0.06, 0.06)
 
         # Active object being manipulated
         self.active_object_id = None
@@ -159,12 +159,19 @@ class MoveGroupExecutor(Node):
         except Exception:
             return
 
+        for obj in self.scene.get("objects", []):
+            pose = obj.get("pose", {})
+            self.get_logger().info(
+                f"DETECTED {obj.get('class')} pose: "
+                f"frame={pose.get('frame')} "
+                f"x={pose.get('x')} y={pose.get('y')} z={pose.get('z')}"
+            )
+
         now_ns = self.get_clock().now().nanoseconds
         if now_ns - self._last_scene_publish_ns < self.scene_publish_period_ns:
             return
         self._last_scene_publish_ns = now_ns
 
-        # Publish scene collisions only when idle (keeps planning scene stable during pick)
         if self.publish_scene_collisions and (not self.busy):
             self.publish_scene_objects_as_collisions()
 
@@ -192,8 +199,8 @@ class MoveGroupExecutor(Node):
             if not pose:
                 continue
 
-            # Skip tray if it causes noise (optional)
-            if cls == "tray":
+            # Skip table if it causes noise 
+            if cls in ("table", "tray"):
                 continue
 
             if pose.get("frame", self.base_frame) != self.base_frame:
@@ -206,6 +213,13 @@ class MoveGroupExecutor(Node):
             self._scene_object_ids.add(obj_id)
 
             co, _prim = self.make_object_collision(obj_id, cls, pose, shrink=0.01)
+            self.get_logger().info(
+                f"PLANNING SCENE {obj_id}: "
+                f"class={cls} x={co.primitive_poses[0].position.x:.3f} "
+                f"y={co.primitive_poses[0].position.y:.3f} "
+                f"z={co.primitive_poses[0].position.z:.3f} "
+                f"size={co.primitives[0].dimensions}"
+            )
             collision_list.append(co)
 
         if collision_list:
@@ -371,6 +385,37 @@ class MoveGroupExecutor(Node):
         co.header.frame_id = self.base_frame
         co.operation = CollisionObject.REMOVE
         return self.apply_world_collision_objects_async([co], label=f"world_remove({obj_id})")
+    
+    def attach_and_remove_world_async(self, obj_id: str, prim: SolidPrimitive):
+        aco = AttachedCollisionObject()
+        aco.link_name = self.ee_link
+        aco.touch_links = list(self.touch_links)
+
+        aco.object = CollisionObject()
+        aco.object.id = obj_id
+        aco.object.header.frame_id = self.ee_link
+        aco.object.operation = CollisionObject.ADD
+        aco.object.primitives = [prim]
+
+        p = Pose()
+        p.orientation.w = 1.0
+        aco.object.primitive_poses = [p]
+
+        world_remove = CollisionObject()
+        world_remove.id = obj_id
+        world_remove.header.frame_id = self.base_frame
+        world_remove.operation = CollisionObject.REMOVE
+
+        ps = PlanningScene()
+        ps.is_diff = True
+        ps.robot_state.attached_collision_objects = [aco]
+        ps.world.collision_objects = [world_remove]
+
+        req = ApplyPlanningScene.Request()
+        req.scene = ps
+        fut = self.ps_client.call_async(req)
+        fut.add_done_callback(lambda f: self._on_apply_done(f, f"attach_and_remove({obj_id})"))
+        return fut
 
     def make_object_collision(self, obj_id: str, cls: str, pose_dict: dict, shrink: float = 0.01):
         sx, sy, sz = self.default_object_box.get(cls, self.fallback_box)
@@ -389,7 +434,25 @@ class MoveGroupExecutor(Node):
         p = Pose()
         p.position.x = float(pose_dict["x"])
         p.position.y = float(pose_dict["y"])
-        p.position.z = float(pose_dict["z"])  
+         # If detector gives top surface z, convert to object center z
+        z_det = float(pose_dict["z"])
+
+        if cls == "box":
+        # box detection looks like top surface
+            p.position.z = z_det - 0.5 * sz
+
+        elif cls == "cup":
+        # cup detection often lands near the top rim
+            p.position.z = z_det - 0.5 * sz
+
+        elif cls == "tray":
+        # tray detection is probably seeing the visual rim, not the base slab
+        # base thickness is 0.03, rim top is about 0.03 above tray center
+            p.position.z = z_det - 0.045
+
+        else:
+            p.position.z = z_det - 0.5 * sz
+
         p.orientation.w = 1.0
 
         co.primitives = [prim]
@@ -488,7 +551,10 @@ class MoveGroupExecutor(Node):
         ps.pose.position.z = float(pose_dict["z"]) + float(dz)
         ps.pose.orientation.w = 1.0
         return ps
-
+    
+    def make_grasp_pose(self, cls: str, pose_dict: dict):
+        pose = dict(pose_dict)
+        return pose
     # -------------------- gripper --------------------
 
     def send_gripper(self, position: float, effort: float = None):
@@ -609,6 +675,7 @@ class MoveGroupExecutor(Node):
         self.publish_scene_collisions = True
 
         pick_pose = dict(pick_pose)
+        grasp_pose = self.make_grasp_pose(pick_cls, pick_pose)
         place_pose = dict(place_pose)
         self._last_place_pose = dict(place_pose)
         place_pose["z"] = max(float(place_pose["z"]), 0.55)
@@ -631,13 +698,13 @@ class MoveGroupExecutor(Node):
         self.active_object_prim = prim
 
         self.seq = [
-            #("approach", self.make_pose_stamped(pick_pose, dz=0.04), True),
-            ("down",     self.make_pose_stamped(pick_pose, dz=0.01), True),
+            #("approach", self.make_pose_stamped(grasp_pose, dz=0.04), True),
+            ("down",     self.make_pose_stamped(grasp_pose, dz=0.01), True),
             ("gripper_close", None, False),
             ("sync_scene", None, False),
-            ("lift",     self.make_pose_stamped(pick_pose, dz=0.18), False),
+            ("lift",     self.make_pose_stamped(grasp_pose, dz=0.18), False),
 
-            ("lower",    self.make_pose_stamped(place_pose, dz=0.01), True),
+            ("lower",    self.make_pose_stamped(place_pose, dz=0.04), True),
             ("gripper_open", None, False),
             ("sync_scene", None, False),
             ("retreat",  self.make_pose_stamped(place_pose, dz=0.18), False),
@@ -693,8 +760,7 @@ class MoveGroupExecutor(Node):
             if self.pending_result is not None and self.pending_result.done():
                 if name == "gripper_close" and self.active_object_id and self.active_object_prim:
                     # attach then remove world copy so finger contact isn't a start-state collision
-                    self.attach_object_async(self.active_object_id, self.active_object_prim)
-                    self.remove_world_object_async(self.active_object_id)
+                    self.attach_and_remove_world_async(self.active_object_id, self.active_object_prim)
 
                 if name == "gripper_open" and self.active_object_id:
     # 1) detach from robot
