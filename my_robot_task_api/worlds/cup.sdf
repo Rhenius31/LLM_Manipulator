@@ -41,7 +41,7 @@
         </material>
       </visual>
 
-      <!-- Inner cavity visual (purely visual to look like a cup) -->
+      <!-- Inner cavity visual -->
       <visual name="inner_cavity">
         <pose>0 0 0.01 0 0 0</pose>
         <geometry>
