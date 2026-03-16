@@ -321,8 +321,8 @@ class MoveGroupExecutor(Node):
         pp["z"] = max(float(pp["z"]), 0.55)
 
         return [
-            {"name": "move_to_place", "pose": self.make_pose_stamped(pp, dz=0.05), "topdown": True},
-            #{"name": "lower", "pose": self.make_pose_stamped(pp, dz=0.04), "topdown": True},
+            {"name": "move_to_place", "pose": self.make_pose_stamped(pp, dz=0.1), "topdown": False},
+            {"name": "lower", "pose": self.make_pose_stamped(pp, dz=0.04), "topdown": True},
             {"name": "gripper_open"},
             {"name": "sync_scene"},
             {"name": "retreat", "pose": self.make_pose_stamped(pp, dz=0.18), "topdown": True},
@@ -465,7 +465,7 @@ class MoveGroupExecutor(Node):
         elif name in ("approach", "lower", "move_to_place"):
             radius = 0.012
         else:
-            radius = 0.04
+            radius = 0.03
 
         enforce_orientation = name in ("down", "lower", "approach", "move_to_place")
 
@@ -789,10 +789,10 @@ class MoveGroupExecutor(Node):
 
         req = MotionPlanRequest()
         req.group_name = self.group_name
-        req.num_planning_attempts = 30
-        req.allowed_planning_time = 30.0
-        req.max_velocity_scaling_factor = 0.2
-        req.max_acceleration_scaling_factor = 0.2
+        req.num_planning_attempts = 60
+        req.allowed_planning_time = 60.0
+        req.max_velocity_scaling_factor = 0.4
+        req.max_acceleration_scaling_factor = 0.4
 
         req.start_state = RobotState()
         if self.last_js is not None:
