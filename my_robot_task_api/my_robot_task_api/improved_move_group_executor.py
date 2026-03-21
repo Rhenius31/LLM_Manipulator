@@ -313,7 +313,7 @@ class MoveGroupExecutor(Node):
             {"name": "down", "pose": self.make_pose_stamped(grasp_pose, dz=0.02), "topdown": True},
             {"name": "gripper_close"},
             {"name": "sync_scene"},
-            #{"name": "lift", "pose": self.make_pose_stamped(grasp_pose, dz=0.18), "topdown": True},
+            {"name": "lift", "pose": self.make_pose_stamped(grasp_pose, dz=0.1), "topdown": False},
         ]
 
     def expand_place(self, place_pose: dict):
@@ -321,8 +321,8 @@ class MoveGroupExecutor(Node):
         pp["z"] = max(float(pp["z"]), 0.55)
 
         return [
-            {"name": "move_to_place", "pose": self.make_pose_stamped(pp, dz=0.1), "topdown": False},
-            {"name": "lower", "pose": self.make_pose_stamped(pp, dz=0.04), "topdown": True},
+            {"name": "move_to_place", "pose": self.make_pose_stamped(pp, dz=0.04), "topdown": False},
+            #{"name": "lower", "pose": self.make_pose_stamped(pp, dz=0.04), "topdown": True},
             {"name": "gripper_open"},
             {"name": "sync_scene"},
             {"name": "retreat", "pose": self.make_pose_stamped(pp, dz=0.18), "topdown": True},
@@ -461,11 +461,11 @@ class MoveGroupExecutor(Node):
     def tick_motion_step(self, name, ps, use_topdown):
         use_tip = name in ("approach", "down", "lower", "move_to_place")
         if name == "down":
-            radius = 0.012
+            radius = 0.025
         elif name in ("approach", "lower", "move_to_place"):
-            radius = 0.012
+            radius = 0.025
         else:
-            radius = 0.03
+            radius = 0.04
 
         enforce_orientation = name in ("down", "lower", "approach", "move_to_place")
 
@@ -539,7 +539,7 @@ class MoveGroupExecutor(Node):
             if not pose:
                 continue
 
-            if cls in ("table", "tray"):
+            if cls in ("table"):
                 continue
 
             if pose.get("frame", self.base_frame) != self.base_frame:
@@ -943,11 +943,13 @@ class MoveGroupExecutor(Node):
         p = Pose()
         p.position.x = float(pose_dict["x"])
         p.position.y = float(pose_dict["y"])-0.05
-        p.position.z = float(pose_dict["z"])+0.05
+        p.position.z = float(pose_dict["z"])
 
         if cls == "box":
             p.position.x = float(pose_dict["x"])-0.05
+            p.position.z = float(pose_dict["z"])+0.03
         p.orientation.w = 1.0
+
 
         co.primitives = [prim]
         co.primitive_poses = [p]
