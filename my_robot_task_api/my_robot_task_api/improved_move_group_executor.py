@@ -947,7 +947,10 @@ class MoveGroupExecutor(Node):
 
         if cls == "box":
             p.position.x = float(pose_dict["x"])-0.05
-            p.position.z = float(pose_dict["z"])+0.03
+            p.position.z = float(pose_dict["z"])+0.04
+
+        if cls == "cup":
+            p.position.z = float(pose_dict["z"])+0.01
         p.orientation.w = 1.0
 
 

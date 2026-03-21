@@ -154,7 +154,8 @@
     <parent link="base_link"/>
     <child link="shoulder_link"/>
     <axis xyz="0 0 1"/>
-    <limit effort="10" lower="-2.68" upper="2.68" velocity="1.6"/>
+    <limit effort="200" lower="-2.68" upper="2.68" velocity="1.6"/>
+    <dynamics damping="0.5" friction="0.1"/>
   </joint>
   <link name="arm_link">
     <inertial>
@@ -186,7 +187,8 @@
     <parent link="shoulder_link"/>
     <child link="arm_link"/>
     <axis xyz="0 0 1"/>
-    <limit effort="14" lower="-2.61" upper="2.61" velocity="1.6"/>
+    <limit effort="200" lower="-2.61" upper="2.61" velocity="1.6"/>
+    <dynamics damping="0.5" friction="0.1"/>
   </joint>
   <link name="forearm_link">
     <inertial>
@@ -218,7 +220,8 @@
     <parent link="arm_link"/>
     <child link="forearm_link"/>
     <axis xyz="0 0 1"/>
-    <limit effort="10" lower="-2.61" upper="2.61" velocity="1.6"/>
+    <limit effort="200" lower="-2.61" upper="2.61" velocity="1.6"/>
+    <dynamics damping="0.5" friction="0.1"/>
   </joint>
   <link name="lower_wrist_link">
     <inertial>
@@ -250,7 +253,8 @@
     <parent link="forearm_link"/>
     <child link="lower_wrist_link"/>
     <axis xyz="0 0 1"/>
-    <limit effort="7" lower="-2.6" upper="2.6" velocity="1.6"/>
+    <limit effort="200" lower="-2.6" upper="2.6" velocity="1.6"/>
+    <dynamics damping="0.5" friction="0.1"/>
   </joint>
   <link name="upper_wrist_link">
     <inertial>
@@ -282,7 +286,8 @@
     <parent link="lower_wrist_link"/>
     <child link="upper_wrist_link"/>
     <axis xyz="0 0 1"/>
-    <limit effort="7" lower="-2.53" upper="2.53" velocity="1.6"/>
+    <limit effort="200" lower="-2.53" upper="2.53" velocity="1.6"/>
+    <dynamics damping="0.5" friction="0.1"/>
   </joint>
   <link name="end_effector_link"/>
   <joint name="joint_6" type="revolute">
@@ -290,7 +295,8 @@
     <parent link="upper_wrist_link"/>
     <child link="end_effector_link"/>
     <axis xyz="0 0 1"/>
-    <limit effort="7" lower="-2.6" upper="2.6" velocity="3.2"/>
+    <limit effort="200" lower="-2.6" upper="2.6" velocity="3.2"/>
+    <dynamics damping="0.5" friction="0.1"/>
   </joint>
   <link name="dummy_link"/>
   <joint name="end_effector" type="fixed">
@@ -371,7 +377,7 @@
     <parent link="gripper_base_link"/>
     <child link="right_finger_prox_link"/>
     <axis xyz="0 0 -1"/>
-    <limit effort="50" lower="0.0" upper="0.85" velocity="0.6"/>
+    <limit effort="100" lower="0.0" upper="0.85" velocity="0.6"/>
   </joint>
   <link name="right_finger_dist_link">
     <inertial>
