@@ -103,6 +103,7 @@ class MoveGroupExecutor(Node):
         self.default_object_box = {
             "cup": (0.08, 0.08, 0.10),
             "box": (0.06, 0.06, 0.06),
+            "box_2": (0.06, 0.06, 0.06),
             "tray": (0.30, 0.20, 0.03),
         }
         self.fallback_box = (0.06, 0.06, 0.06)
@@ -321,7 +322,7 @@ class MoveGroupExecutor(Node):
         pp["z"] = max(float(pp["z"]), 0.55)
 
         return [
-            {"name": "move_to_place", "pose": self.make_pose_stamped(pp, dz=0.04), "topdown": False},
+            {"name": "move_to_place", "pose": self.make_pose_stamped(pp, dz=0.04), "topdown": True},
             #{"name": "lower", "pose": self.make_pose_stamped(pp, dz=0.04), "topdown": True},
             {"name": "gripper_open"},
             {"name": "sync_scene"},
@@ -471,7 +472,7 @@ class MoveGroupExecutor(Node):
 
         if self._step_attempt >= 1:
             enforce_orientation = False
-            radius = max(radius, 0.04)
+            radius = max(radius, 0.025)
 
         if self.pending_goal is None and self.pending_result is None:
             self.get_logger().info(
@@ -550,6 +551,10 @@ class MoveGroupExecutor(Node):
             self._scene_object_ids.add(scene_id)
 
             co, _prim = self.make_object_collision(scene_id, cls, pose, shrink=0.01)
+            self.get_logger().info(
+                f"Adding collision object: id={scene_id}, class={cls}, "
+                f"pose=({p.pose.position.x if False else pose['x']}, {pose['y']}, {pose['z']})"
+            )
             collision_list.append(co)
 
         if collision_list:
@@ -624,7 +629,7 @@ class MoveGroupExecutor(Node):
         pose["y"] -= 0.05
         if cls == "cup":
             pose["z"] = float(pose["z"]) + 0.00
-        elif cls == "box":
+        elif cls in ("box","box_2"):
             pose["x"] -= 0.05 
             pose["z"] = float(pose["z"]) + 0.00
         return pose
@@ -789,8 +794,8 @@ class MoveGroupExecutor(Node):
 
         req = MotionPlanRequest()
         req.group_name = self.group_name
-        req.num_planning_attempts = 60
-        req.allowed_planning_time = 60.0
+        req.num_planning_attempts = 200
+        req.allowed_planning_time = 180.0
         req.max_velocity_scaling_factor = 0.4
         req.max_acceleration_scaling_factor = 0.4
 
@@ -945,7 +950,7 @@ class MoveGroupExecutor(Node):
         p.position.y = float(pose_dict["y"])-0.05
         p.position.z = float(pose_dict["z"])
 
-        if cls == "box":
+        if cls in ("box","box_2"):
             p.position.x = float(pose_dict["x"])-0.05
             p.position.z = float(pose_dict["z"])+0.04
 
