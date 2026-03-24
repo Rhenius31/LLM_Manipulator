@@ -1,0 +1,11 @@
+benchmark_index,command,duration_sec,expected_command,measured_duration_sec,plan_intent,planner_label,reason,status,steps_completed,steps_total
+0,pick the cup and hold it,0.004978179931640625,pick the cup and hold it,11.639241695404053,unknown,improved,unsupported_intent:unknown,failed,0,0
+1,pick the box and hold it,3.337860107421875e-06,pick the box and hold it,6.929824113845825,unknown,improved,unsupported_intent:unknown,failed,0,0
+2,put the cup on the tray,4.5299530029296875e-06,put the cup on the tray,6.8545050621032715,unknown,improved,unsupported_intent:unknown,failed,0,0
+3,put the box on the tray,3.0994415283203125e-06,put the box on the tray,6.911777973175049,unknown,improved,unsupported_intent:unknown,failed,0,0
+4,put the cup on the table,4.0531158447265625e-06,put the cup on the table,0.015964984893798828,unknown,improved,unsupported_intent:unknown,failed,0,0
+5,put the box on the table,3.5762786865234375e-06,put the box on the table,0.005753755569458008,unknown,improved,unsupported_intent:unknown,failed,0,0
+6,move home,5.9604644775390625e-06,move home,6.833475828170776,unknown,improved,unsupported_intent:unknown,failed,0,0
+7,pick the cup and hold it,4.5299530029296875e-06,pick the cup and hold it,6.870321750640869,unknown,improved,unsupported_intent:unknown,failed,0,0
+8,put the cup on the tray,3.337860107421875e-06,put the cup on the tray,6.79109001159668,unknown,improved,unsupported_intent:unknown,failed,0,0
+9,pick the mug and put it on the tray,3.0994415283203125e-06,pick the mug and put it on the tray,6.944905757904053,unknown,improved,unsupported_intent:unknown,failed,0,0

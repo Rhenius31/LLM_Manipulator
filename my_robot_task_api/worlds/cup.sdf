@@ -22,7 +22,7 @@
       <collision name="collision">
         <geometry>
           <cylinder>
-            <radius>0.04</radius>
+            <radius>0.03</radius>
             <length>0.10</length>
           </cylinder>
         </geometry>
@@ -32,7 +32,7 @@
       <visual name="outer">
         <geometry>
           <cylinder>
-            <radius>0.04</radius>
+            <radius>0.03</radius>
             <length>0.10</length>
           </cylinder>
         </geometry>
@@ -46,7 +46,7 @@
         <pose>0 0 0.01 0 0 0</pose>
         <geometry>
           <cylinder>
-            <radius>0.032</radius>
+            <radius>0.022</radius>
             <length>0.08</length>
           </cylinder>
         </geometry>

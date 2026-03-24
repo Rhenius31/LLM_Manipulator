@@ -1,0 +1,3 @@
+benchmark_index,expected_command,measured_duration_sec,planner_label,reason,status
+0,pick the box and place it on the tray,133.4704442024231,improved,sequence_aborted,failed
+1,pick the cup and place it on the tray,20.227794408798218,improved,unsupported_intent,failed
