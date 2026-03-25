@@ -511,7 +511,7 @@ class MoveGroupExecutor(Node):
 
         if self._step_attempt >= 1:
             enforce_orientation = False
-            radius = max(radius, 0.030)
+            radius = max(radius, 0.033)
 
         if self.pending_goal is None and self.pending_result is None:
             self.get_logger().info(

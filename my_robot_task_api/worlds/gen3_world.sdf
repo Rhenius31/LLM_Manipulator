@@ -5,7 +5,7 @@
     <!-- Core Gazebo Sim systems (REQUIRED) -->
     <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics">
       <engine>
-      <filename>gz-physics-bullet-featherstone-plugin</filename>
+      <filename>gz-physics-dartsim-plugin</filename>
       </engine>
     </plugin>
     <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
@@ -17,10 +17,10 @@
     </plugin>
 
     <!-- Physics engine -->
-    <physics name="default_physics" type="bullet">
-      <max_step_size>0.004</max_step_size>
+    <physics name="default_physics" type="dart">
+      <max_step_size>0.001</max_step_size>
       <real_time_factor>1.0</real_time_factor>
-      <real_time_update_rate>250</real_time_update_rate>
+      <real_time_update_rate>1000</real_time_update_rate>
     </physics>
 
     <!-- Simple light -->

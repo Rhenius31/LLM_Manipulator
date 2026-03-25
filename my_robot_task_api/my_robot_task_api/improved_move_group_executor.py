@@ -326,7 +326,7 @@ class MoveGroupExecutor(Node):
             #{"name": "lower", "pose": self.make_pose_stamped(pp, dz=0.04), "topdown": True},
             {"name": "gripper_open"},
             {"name": "sync_scene"},
-            {"name": "retreat", "pose": self.make_pose_stamped(pp, dz=0.18), "topdown": True},
+            {"name": "retreat", "pose": self.make_pose_stamped(pp, dz=0.5), "topdown": True},
         ]
 
     def expand_move_home(self):
@@ -472,7 +472,7 @@ class MoveGroupExecutor(Node):
 
         if self._step_attempt >= 1:
             enforce_orientation = False
-            radius = max(radius, 0.025)
+            radius = max(radius, 0.035)
 
         if self.pending_goal is None and self.pending_result is None:
             self.get_logger().info(
@@ -506,7 +506,11 @@ class MoveGroupExecutor(Node):
                     self.pending_goal = None
                     self.pending_result = None
                     return
-                self.abort_sequence()
+                self.get_logger().warn("Continuing despite failure")
+                self.pending_goal = None
+                self.pending_result = None
+                self.step_idx += 1
+                self._step_attempt = 0
                 return
 
             self.pending_goal = None
