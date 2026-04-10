@@ -89,6 +89,9 @@ class BBoxToPose(Node):
             u0, u1 = max(0, u-half), min(depth.shape[1], u+half+1)
             v0, v1 = max(0, v-half), min(depth.shape[0], v+half+1)
 
+            if cls in ("table", "tray", "box" ):
+                continue
+
             self.pub_json.publish(String(data=json.dumps({"objects": objects})))
             self.get_logger().info(f"det cls={cls} u={u} v={v}", throttle_duration_sec=1.0)
             self.get_logger().info(f"using camera_frame={self.camera_frame}", throttle_duration_sec=2.0)
@@ -151,7 +154,6 @@ class BBoxToPose(Node):
             out = PoseStamped()
             out.header = pose_base.header
             out.pose = pose_base.pose
-            # hack: carry class in frame_id suffix for quick debugging
             out.header.frame_id = f"{self.target_frame}:{cls}"
             self.pub_pose.publish(out)
             

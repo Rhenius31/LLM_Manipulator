@@ -129,9 +129,9 @@ class MoveGroupExecutor(Node):
 
         self.timer = self.create_timer(0.05, self.tick, callback_group=self.cb_group)
 
-    # --------------------------------------------------
+    
     # basic callbacks
-    # --------------------------------------------------
+    
 
     def cb_js(self, msg: JointState):
         self.last_js = msg
@@ -192,9 +192,9 @@ class MoveGroupExecutor(Node):
 
         self.get_logger().warn(f"Unsupported intent: {plan.get('intent')}")
 
-    # --------------------------------------------------
+    
     # object selection
-    # --------------------------------------------------
+    
 
     def select_object(self, object_id=None, cls=None, index=0):
         objs = self.scene.get("objects", [])
@@ -222,9 +222,9 @@ class MoveGroupExecutor(Node):
             return None, None
         return obj["pose"], obj
 
-    # --------------------------------------------------
+    
     # symbolic step execution
-    # --------------------------------------------------
+    
 
     def execute_symbolic_steps(self, plan: dict) -> bool:
         steps = plan.get("steps", [])
@@ -296,9 +296,9 @@ class MoveGroupExecutor(Node):
         self.queue_sequence(low_level)
         return True
 
-    # --------------------------------------------------
+    
     # skill expansion
-    # --------------------------------------------------
+    
 
     def expand_pick(self, obj: dict):
         pick_pose = dict(obj["pose"])
@@ -350,9 +350,9 @@ class MoveGroupExecutor(Node):
         self._sync_until_ns = 0
         self.get_logger().info(f"Queued sequence with {len(seq)} steps")
 
-    # --------------------------------------------------
+    
     # pick object scene prep
-    # --------------------------------------------------
+    
 
     def prepare_active_pick_object(self, obj: dict):
         pick_cls = obj["class"]
@@ -376,9 +376,9 @@ class MoveGroupExecutor(Node):
         self.active_object_prim = prim
         self.active_pick_object = obj
 
-    # --------------------------------------------------
+    
     # tick loop
-    # --------------------------------------------------
+    
 
     def tick(self):
         if not self.busy:
@@ -527,9 +527,9 @@ class MoveGroupExecutor(Node):
         self._sync_until_ns = 0
         self.get_logger().error("Sequence aborted")
 
-    # --------------------------------------------------
+    
     # scene collision publishing
-    # --------------------------------------------------
+    
 
     def publish_scene_objects_as_collisions(self):
         objs = self.scene.get("objects", [])
@@ -566,9 +566,9 @@ class MoveGroupExecutor(Node):
                 self.collision_pub.publish(co)
             self.apply_world_collision_objects_async(collision_list, label="scene_update")
 
-    # --------------------------------------------------
+    
     # geometry / pose helpers
-    # --------------------------------------------------
+    
 
     def _init_tip_offset_once(self):
         if self._cached_tip_offset is not None:
@@ -638,9 +638,9 @@ class MoveGroupExecutor(Node):
             pose["z"] = float(pose["z"]) + 0.00
         return pose
 
-    # --------------------------------------------------
+    
     # gripper
-    # --------------------------------------------------
+    
 
     def send_gripper(self, position: float, effort: float = None):
         if effort is None:
@@ -656,9 +656,9 @@ class MoveGroupExecutor(Node):
     def close_gripper(self):
         return self.send_gripper(self.gripper_closed)
 
-    # --------------------------------------------------
+    
     # MoveIt goal generation
-    # --------------------------------------------------
+    
 
     def quat_to_rot(self, q):
         x, y, z, w = q
@@ -830,9 +830,9 @@ class MoveGroupExecutor(Node):
 
         return self.client.send_goal_async(goal)
 
-    # --------------------------------------------------
+    
     # planning scene helpers
-    # --------------------------------------------------
+    
 
     def _on_apply_done(self, future, label: str):
         try:

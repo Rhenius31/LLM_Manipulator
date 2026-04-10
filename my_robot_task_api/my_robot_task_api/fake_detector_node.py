@@ -1,8 +1,4 @@
-# =========================
-# 3) fake_detector_node.py
-# - Start marker just ABOVE table top (so you don't accidentally command inside table)
-# - Keep publishing at 10 Hz
-# =========================
+
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
@@ -18,7 +14,6 @@ class FakeDetector(Node):
         self.frame_id = "base_link"
         self.pub = self.create_publisher(PoseStamped, "/detected_object_pose", 10)
 
-        # MUST MATCH scene_node.py (table top)
         self.table_top_z = 0.30
 
         # Store last pose (start above table)

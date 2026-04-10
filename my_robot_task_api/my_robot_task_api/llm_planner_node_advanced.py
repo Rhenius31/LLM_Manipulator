@@ -533,9 +533,9 @@ Output requirements:
 
         return self.validate_and_finalize(plan, objects, cmd)
 
-    # ------------------------------------------------------------------
+    
     # Validation and final cleanup
-    # ------------------------------------------------------------------
+    
 
     def validate_and_finalize(self, plan: Dict, objects: List[Dict], cmd: str) -> Dict:
         grouped = self.group_by_class(objects)
@@ -614,7 +614,7 @@ Output requirements:
                 "id": place_obj["id"]
             }
 
-            # rewrite steps to be consistent
+            # rewrite steps
             if plan["intent"] == "pick_and_place":
                 plan["steps"] = [
                     {

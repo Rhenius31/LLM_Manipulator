@@ -20,7 +20,7 @@ class SceneNode(Node):
         self.get_logger().info("Waiting for /apply_planning_scene ...")
         self.cli.wait_for_service()
 
-        # ---- TABLE CONFIG (match this in your PickPlaceNode) ----
+        # TABLE CONFIG 
         self.table_size_x = 0.8
         self.table_size_y = 1.2
         self.table_thickness = 0.05
@@ -28,7 +28,6 @@ class SceneNode(Node):
         self.table_center_x = 0.5
         self.table_center_y = 0.0
 
-        # This is the *TOP SURFACE* height you want (tune to your real table)
         self.table_top_z = 0.20
 
         # Add defaults on startup
@@ -61,7 +60,6 @@ class SceneNode(Node):
         pose.position.x = self.table_center_x
         pose.position.y = self.table_center_y
 
-        # IMPORTANT: pose.z is the CENTER of the box
         pose.position.z = self.table_top_z - (self.table_thickness / 2.0)
 
         pose.orientation.w = 1.0

@@ -77,9 +77,8 @@ class BBoxToPose(Node):
 
         self.get_logger().info("BBox->Pose with tracking online")
 
-    # --------------------------------------------------
+    
     # callbacks
-    # --------------------------------------------------
 
     def cb_depth(self, msg: Image):
         try:
@@ -177,9 +176,9 @@ class BBoxToPose(Node):
 
         self.update_tracks(measurements)
 
-    # --------------------------------------------------
+    
     # tracking
-    # --------------------------------------------------
+ 
 
     def pose_dist(self, a, b):
         dx = float(a["x"]) - float(b["x"])
@@ -240,9 +239,9 @@ class BBoxToPose(Node):
         for tid in stale:
             del self.tracks[tid]
 
-    # --------------------------------------------------
+    
     # publishing
-    # --------------------------------------------------
+    
 
     def publish_tracks(self):
         now_ns = self.get_clock().now().nanoseconds

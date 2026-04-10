@@ -40,13 +40,12 @@ class MoveGroupExecutor(Node):
 
         self.cb_group = ReentrantCallbackGroup()
 
-        # --- MoveIt frames/links ---
+        # MoveIt frames/links 
         self.group_name = "arm"
-        # IMPORTANT: MoveIt for Gen3 Lite usually plans in base_link, not world.
         self.base_frame = "base_link"
         self.ee_link = "tool_frame"
 
-        # fingertip links (adjust if your TF tree uses different names)
+        # fingertip links 
         self.left_tip_link = "left_finger_dist_link"
         self.right_tip_link = "right_finger_dist_link"
         self._cached_tip_offset = None
@@ -70,13 +69,13 @@ class MoveGroupExecutor(Node):
             String, "/task_plan", self.cb_plan, 10, callback_group=self.cb_group
         )
 
-        # Joint states (used to seed start_state)
+        # Joint states 
         self.last_js = None
         self.create_subscription(
             JointState, "/joint_states", self.cb_js, 10, callback_group=self.cb_group
         )
 
-        # --- Gripper (GripperActionController) ---
+        # Gripper (GripperActionController)
         self.declare_parameter("gripper_action_name", "/gen3_lite_2f_gripper_controller/gripper_cmd")
         self.declare_parameter("gripper_open", 0.1)      # tune for your controller (often 0.5..1.0)
         self.declare_parameter("gripper_closed", 0.5)    # tune for your controller (often 0.0)
@@ -115,7 +114,7 @@ class MoveGroupExecutor(Node):
         self.pending_result = None
         self.timer = self.create_timer(0.05, self.tick, callback_group=self.cb_group)
 
-    # -------------------- callbacks --------------------
+    # callbacks 
 
     def cb_js(self, msg: JointState):
         self.last_js = msg
@@ -135,7 +134,7 @@ class MoveGroupExecutor(Node):
             index = 0
         return matches[index]["pose"]
 
-    # -------------------- fingertip offset --------------------
+    # fingertip offset 
 
     def _init_tip_offset_once(self):
         if self._cached_tip_offset is not None:
@@ -169,7 +168,7 @@ class MoveGroupExecutor(Node):
             self.get_logger().warn(f"Failed to compute fingertip midpoint offset: {e}")
             return None
 
-    # -------------------- collision --------------------
+    # collision 
 
     def _publish_table_once(self):
         if self._published_table:
@@ -207,7 +206,7 @@ class MoveGroupExecutor(Node):
         self.collision_pub.publish(co)
         self.get_logger().info("Published table collision object (/collision_object)")
 
-    # -------------------- math helpers --------------------
+    #  math helpers 
 
     def quat_to_rot(self, q):
         x, y, z, w = q
@@ -284,7 +283,7 @@ class MoveGroupExecutor(Node):
         else:
             y_proj /= n
 
-    # Desired: tool +X points down
+    # tool points down
         x_axis = np.array([0.0, 0.0, -1.0], dtype=float)
 
     # Make y orthogonal to x (Gram–Schmidt)
@@ -299,7 +298,7 @@ class MoveGroupExecutor(Node):
         return self.rot_to_quat(R)
 
 
-    # -------------------- pose helpers --------------------
+    # pose helpers 
 
     def make_pose_stamped(self, pose_dict, dz=0.0):
         """
@@ -315,7 +314,7 @@ class MoveGroupExecutor(Node):
         ps.pose.orientation.w = 1.0
         return ps
 
-    # -------------------- gripper --------------------
+    #  gripper 
 
     def send_gripper(self, position: float, effort: float = None):
         if effort is None:
@@ -332,7 +331,7 @@ class MoveGroupExecutor(Node):
     def close_gripper(self):
         return self.send_gripper(self.gripper_closed)
 
-    # -------------------- MoveIt constraints / goal --------------------
+    # MoveIt constraints / goal
 
     def make_goal_constraints(
         self,
@@ -394,7 +393,7 @@ class MoveGroupExecutor(Node):
                 oc.orientation.y = float(q[1])
                 oc.orientation.z = float(q[2])
                 oc.orientation.w = float(q[3])
-                # fairly loose tolerances; tighten later
+                # tolerances
                 oc.absolute_x_axis_tolerance = 1.0
                 oc.absolute_y_axis_tolerance = 1.0
                 oc.absolute_z_axis_tolerance = 3.14
@@ -408,8 +407,6 @@ class MoveGroupExecutor(Node):
     def send_pose_goal_constrained(self, pose_stamped: PoseStamped, use_topdown: bool, radius: float, use_tip: bool):
         req = MotionPlanRequest()
         req.group_name = self.group_name
-
-        # Let MoveIt pick its default pipeline unless you KNOW it's "ompl"
         req.pipeline_id = "ompl"
         req.num_planning_attempts = 20
         req.allowed_planning_time = 20.0
@@ -436,10 +433,10 @@ class MoveGroupExecutor(Node):
         goal.planning_options.replan_attempts = 5
         return self.client.send_goal_async(goal)
 
-    # -------------------- task sequencing --------------------
+    # -task sequencing 
 
     def pick_and_place(self, pick_pose, place_pose):
-        # Table geometry (matches your collision object)
+        # Table geometry 
         TABLE_TOP_CENTER_Z = 0.58
         TABLE_THICKNESS = 0.04
         TABLE_TOP_Z = TABLE_TOP_CENTER_Z + TABLE_THICKNESS / 2.0
@@ -450,8 +447,6 @@ class MoveGroupExecutor(Node):
         # place slightly above table surface
         place_pose["z"] = TABLE_TOP_Z + 0.02
 
-        # Put back approach/down so you actually reach the object before closing.
-        # Use topdown for grasping motions to keep gripper vertical.
         self.seq = [
             ("pregrasp", self.make_pose_stamped(pick_pose, dz=0.10), True),
             ("approach", self.make_pose_stamped(pick_pose, dz=0.05), True),
@@ -481,7 +476,7 @@ class MoveGroupExecutor(Node):
 
         name, ps, use_topdown = self.seq[self.step_idx]
 
-        # --- Gripper-only steps ---
+        # Gripper-only steps
         if name in ("gripper_close", "gripper_open"):
             if self.pending_goal is None and self.pending_result is None:
                 self.get_logger().info(f"Step {self.step_idx+1}/{len(self.seq)}: {name}")
@@ -498,13 +493,13 @@ class MoveGroupExecutor(Node):
                 return
 
             if self.pending_result is not None and self.pending_result.done():
-                # You could check res.status here if you want, but many controllers always return success.
+
                 self.pending_goal = None
                 self.pending_result = None
                 self.step_idx += 1
             return
 
-        # Use fingertip midpoint for approach/down/lower so the *grasp point* hits the target.
+
         use_tip = name in ("approach", "down", "lower")
 
         # Tight radius for precise contact steps, looser for travel steps
@@ -572,7 +567,7 @@ class MoveGroupExecutor(Node):
             self.pending_result = None
             self.step_idx += 1
 
-    # -------------------- plan callback --------------------
+    # plan callback 
 
     def cb_plan(self, msg: String):
         try:

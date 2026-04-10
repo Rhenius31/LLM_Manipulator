@@ -37,7 +37,7 @@ class LLMPlanner(Node):
             objs.append({
                 "class": "table",
                 "pose": {
-                    "frame_id": "world",  # <-- IMPORTANT: static model pose is in world
+                    "frame_id": "world",  
                     "position": {"x": 0.6, "y": 0.0, "z": 0.58},
                     "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
                 },
@@ -125,31 +125,26 @@ class LLMPlanner(Node):
         )
 
     def _extract_plan_str(self, resp) -> str:
-        # 1) Best case: SDK provides output_text
         out_text = getattr(resp, "output_text", None)
         if out_text:
             return out_text
 
-        # 2) Walk output items and find text or json payload
-        # Different SDK/model combos may store the structured result as JSON instead of text.
         for item in (getattr(resp, "output", None) or []):
             for c in (getattr(item, "content", None) or []):
                 ctype = getattr(c, "type", None)
 
-                # If there's direct JSON payload
                 if ctype in ("output_json", "json") and getattr(c, "json", None) is not None:
                     return json.dumps(c.json)
 
-                # If there's text payload
+            
                 if getattr(c, "text", None):
                     return c.text
 
-                # Some variants store it in "data"
+             
                 if getattr(c, "data", None):
                     return str(c.data)
 
-        # 3) Last resort: stringify and try to find a JSON object
-        # (kept minimal; avoids crashing silently)
+
         self.get_logger().error(f"resp.output = {getattr(resp,'output',None)}")
 
         raise RuntimeError("No plan content found in response (no output_text / json / text).")

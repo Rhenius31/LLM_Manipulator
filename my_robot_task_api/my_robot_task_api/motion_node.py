@@ -92,9 +92,9 @@ class MotionBase(Node):
     def _on_joint_state(self, msg: JointState):
         self._last_joint_state = msg
 
-    # -------------------------
+    # -
     # Pose helper
-    # -------------------------
+    # -
     def pose_from_xyz_preset(self, x, y, z, preset="carry") -> PoseStamped:
         ps = PoseStamped()
         ps.header.frame_id = self.planning_frame
@@ -108,7 +108,6 @@ class MotionBase(Node):
     def move_xyz_unconstrained_sync(self, x, y, z, duration_sec=3.0) -> bool:
         """
         Move to XYZ with orientation unconstrained (identity quaternion).
-        This avoids IK failing due to strict orientation constraints.
         """
         self.get_logger().info(f"[POSE->IK FREE] x={x:.3f} y={y:.3f} z={z:.3f}")
 
@@ -125,9 +124,9 @@ class MotionBase(Node):
 
         return self.execute_joints_controller_sync(joints, duration_sec=duration_sec)
 
-    # -------------------------
-    # IK (compute_ik) -> joint list
-    # -------------------------
+    # -
+    # IK (compute_ik) 
+    # -
     def compute_ik_sync(self, pose_stamped: PoseStamped):
         req = GetPositionIK.Request()
         req.ik_request.group_name = self.group_name
@@ -136,7 +135,6 @@ class MotionBase(Node):
         req.ik_request.avoid_collisions = False
 
 
-        # Jazzy: PositionIKRequest may not have "attempts", so we only set timeout
         req.ik_request.timeout.sec = 2
         req.ik_request.timeout.nanosec = 0
 
@@ -182,9 +180,8 @@ class MotionBase(Node):
         self.get_logger().info("[IK] Success ")
         return joints
 
-    # -------------------------
+
     # Execute joints via controller
-    # -------------------------
     def execute_joints_controller_sync(self, joints, duration_sec=3.0) -> bool:
         goal = FollowJointTrajectory.Goal()
         goal.trajectory.joint_names = list(self.joint_names)
@@ -240,9 +237,9 @@ class MotionBase(Node):
         self.get_logger().error("[ALIGN-DOWN] Failed for all yaw options.")
         return False
 
-    # -------------------------
+
     # Pose -> IK -> controller execute
-    # -------------------------
+
     def move_pose_via_ik_controller_sync(self, x, y, z, preset="carry", duration_sec=3.0) -> bool:
         self.get_logger().info(
             f"[POSE->IK] x={x:.3f} y={y:.3f} z={z:.3f} preset={preset}"
@@ -256,9 +253,8 @@ class MotionBase(Node):
         self.get_logger().info(f"[POSE->IK] joints={[round(j, 3) for j in joints]}")
         return self.execute_joints_controller_sync(joints, duration_sec=duration_sec)
 
-    # -------------------------
+
     # Gripper
-    # -------------------------
     def send_gripper(self, position: float, max_effort: float = GRIPPER_EFFORT):
         g = GripperCommand.Goal()
         g.command.position = float(position)

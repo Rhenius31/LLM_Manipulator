@@ -2,16 +2,16 @@
 <sdf version="1.9">
   <world name="default">
 
-    <!-- Core Gazebo Sim systems (REQUIRED) -->
+    <!-- Core Gazebo Sim systems  -->
     <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics">
       <engine>
-      <filename>gz-physics-dartsim-plugin</filename>
+      <filename>gz-physics-bullet-featherstone-plugin</filename>
       </engine>
     </plugin>
     <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
     <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
 
-    <!-- REQUIRED for camera / depth / lidar -->
+    <!--  for camera / depth / lidar -->
     <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
       <render_engine>ogre2</render_engine>
     </plugin>

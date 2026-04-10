@@ -37,6 +37,8 @@ setup(
             'fake_detector_node = my_robot_task_api.fake_detector_node:main',
             'scene_node = my_robot_task_api.scene_node:main',
             "robot_description_publisher = my_robot_task_api.robot_description_publisher:main",
+            'gripper_impact_detector = my_robot_task_api.gripper_impact_detector:main',
+            'debug_gripper_state = my_robot_task_api.debug_gripper_state:main',
 
         ],
     },

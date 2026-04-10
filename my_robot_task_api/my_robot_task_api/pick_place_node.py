@@ -34,7 +34,7 @@ class PickPlaceNode(MotionBase):
 
         # Box + tag geometry (meters)
         self.box_size = 0.05
-        #self.tag_to_box_center_z = -self.box_size / 2.0  # tag on top -> center is 2.5cm below
+        #self.tag_to_box_center_z = -self.box_size / 2.0  
         #self.extra_grasp_clearance = 0.01  
         self.table_top_z = 0.575
         self.grasp_clearance = 0.01  # tune
@@ -68,12 +68,6 @@ class PickPlaceNode(MotionBase):
         try:
             self.get_logger().info("Starting pick & place sequence...")
 
-            # Optional: safe pre-pick pose (keeps robot consistent)
-          #  ok = self.move_pose_via_ik_controller_sync(0.35, 0.0, 0.25, preset="carry", duration_sec=3.0)
-            #if not ok:
-             #   self.get_logger().error("Failed to move to safe pose ")
-              #  return
-
             ok = self.execute_pick_place(obj_pose)
             if ok:
                 self.get_logger().info("Pick & place done ")
@@ -85,7 +79,7 @@ class PickPlaceNode(MotionBase):
         x = float(obj_pose.pose.position.x)
         y = float(obj_pose.pose.position.y)
         z = float(obj_pose.pose.position.z)
-        # Move grasp target from tag-top to box center (+ a little clearance)
+        # Move grasp target from tag-top to box center 
         z = self.table_top_z + (self.box_size / 2.0) + self.grasp_clearance
         
 
@@ -110,7 +104,7 @@ class PickPlaceNode(MotionBase):
         lift_z = z + self.lift_h
         #align_z= approach_z + 0.1
 
-    # --- PICK ---
+    # PICK 
         if not must(self.gripper_sync("open"), "gripper open"):
             return False
 
@@ -149,7 +143,7 @@ class PickPlaceNode(MotionBase):
     #):
      #       return False
 
-    # --- PLACE ---
+    #  PLACE 
         place_approach_z = self.place_z + self.approach_h
         place_grasp_z = self.place_z + self.grasp_h
         place_lift_z = self.place_z + self.lift_h

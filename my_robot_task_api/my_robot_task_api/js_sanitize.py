@@ -16,11 +16,9 @@ class SanitizeJointStates(Node):
         out.name = list(msg.name)
         out.position = list(msg.position)
 
-        # Drop velocity/effort entirely (MoveIt doesn't need them)
         out.velocity = []
         out.effort = []
 
-        # Also guard against NaNs in position
         for i, p in enumerate(out.position):
             if p is None or (isinstance(p, float) and math.isnan(p)):
                 self.get_logger().warn(f"NaN position for joint {out.name[i] if i < len(out.name) else i}, setting 0.0")

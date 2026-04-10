@@ -7,14 +7,13 @@ import time
 WORLD = "default"
 SETPOSE_SRV = f"/world/{WORLD}/set_pose"
 
-# model names must match your actual spawned model names
+# model names must match actual spawned model names
 MODELS = ["cup", "box", "tray"]
 
-# table center region (tune these)
+# table center region 
 X_RANGE = (0.35, 0.60)
 Y_RANGE = (-0.22, 0.22)
 
-# spawn a little above table so physics settles them
 Z_SPAWN = 0.70
 
 def run(cmd):
@@ -53,8 +52,6 @@ def main():
             x, y, yaw = random_xy_yaw()
             y += (i - 1) * 0.06  # small separation to reduce collisions
             set_pose(m, x, y, Z_SPAWN, yaw)
-
-        # let it settle + allow camera to capture frames
         time.sleep(0.6)
 
     print("Done.")

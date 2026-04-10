@@ -14,7 +14,7 @@ def quat_from_rpy(roll, pitch, yaw):
     q.z = cr*cp*sy - sr*sp*cy
     return q
 
-# Example presets (tune these for your real tool direction)
+# Example presets 
 ORIENTATIONS = {
     "carry": quat_from_rpy(0.0, 0.0, 0.0),
     "grasp_down": quat_from_rpy(0.0, math.pi, 0.0),   # tool pointing down (often pitch=pi)

@@ -11,7 +11,7 @@ LABEL_TO_CLASS = {
 }
 
 def decode_ids(lbl_bgr: np.ndarray) -> np.ndarray:
-    # Your labels_map is grayscale replicated in B,G,R => pick one channel
+ 
     return lbl_bgr[:, :, 0].astype(np.int32)
 
 def to_yolo(cls, x, y, w, h, W, H):

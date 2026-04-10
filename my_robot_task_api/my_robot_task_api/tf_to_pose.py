@@ -9,7 +9,7 @@ class TfToPose(Node):
     def __init__(self):
         super().__init__("tf_to_pose")
 
-        # ---- Params (change defaults if your frame names differ) ----
+        #  Params 
         self.declare_parameter("base_frame", "gen3_lite/base_link")
         self.declare_parameter("target_frame", "tag36h11:0")  # apriltag frame
         self.declare_parameter("output_topic", "/object_pose")

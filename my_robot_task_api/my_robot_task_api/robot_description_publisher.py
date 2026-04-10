@@ -12,7 +12,6 @@ class RobotDescriptionPublisher(Node):
         msg = String()
         msg.data = urdf
 
-        # publish a few times so late subscribers get it
         for _ in range(10):
             self.pub.publish(msg)
 
