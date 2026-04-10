@@ -37,18 +37,16 @@ def generate_launch_description():
         output="screen",
         additional_env={"LIBGL_ALWAYS_SOFTWARE": "1"},
         parameters=[
-            # pass ONLY what RViz needs explicitly
+        
             {"robot_description": moveit_config.robot_description["robot_description"]},
             {"robot_description_semantic": moveit_config.robot_description_semantic["robot_description_semantic"]},
             {"robot_description_kinematics": moveit_config.robot_description_kinematics["robot_description_kinematics"]},
             {"use_sim_time": use_sim_time},
         ],
-        # optional if you have a config file:
-        # arguments=["-d", str(moveit_config.package_path / "config" / "moveit.rviz")],
     )
 
     return LaunchDescription([
         DeclareLaunchArgument("use_sim_time", default_value="true"),
         move_group,
-        TimerAction(period=2.0, actions=[rviz]),  # delay helps a lot
+        TimerAction(period=2.0, actions=[rviz]),  
     ])

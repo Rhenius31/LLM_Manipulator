@@ -13,7 +13,6 @@ def generate_launch_description():
     controllers_yaml = os.path.join(pkg, "config", "ros2_controllers.yaml")
     urdf_xacro = os.path.join(pkg, "config", "gen3_lite_gen3_lite_2f.urdf.xacro")
 
-    # Generate robot_description in-process to avoid "stderr warning == failure"
     doc = xacro.process_file(
         urdf_xacro,
         mappings={
