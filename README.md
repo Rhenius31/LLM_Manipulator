@@ -20,10 +20,6 @@ The system integrates **Large Language Models (LLMs)**, **YOLOv8-based perceptio
 
 ##  System Architecture
 User Input → LLM Planner → Task Plan → Executor → MoveIt → Robot
-↑
-Scene Representation
-↑
-YOLOv8 + RGB-D Perception
 
 ---
 
