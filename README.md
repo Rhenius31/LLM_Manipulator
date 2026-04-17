@@ -1,4 +1,4 @@
-# LLM-Guided Control for Industrial Manipulator”
+# LLM-Guided Control for Industrial Manipulator
 
 This project presents a hybrid robotic task-planning system that enables a robotic manipulator to understand natural language commands and execute them autonomously using perception, planning, and control.
 
