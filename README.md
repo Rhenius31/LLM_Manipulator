@@ -56,8 +56,5 @@ User Input → LLM Planner → Task Plan → Executor → MoveIt → Robot
    - MoveIt plans collision-free trajectory
    - Robot performs pick-and-place
 
-5. **Feedback**
-   - Impact detection verifies grasp success
-   - Retries if needed
 
 ---
